@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>项目管理系统 · Project Management System</title>
+  <link rel="stylesheet" href="styles/base.css" />
+  <link rel="stylesheet" href="styles/effects.css" />
+  <link rel="stylesheet" href="styles/modules.css" />
+</head>
+<body>
+  <!-- 背景特效层：火焰流光 + 光球 -->
+  <div class="bg-fx" aria-hidden="true">
+    <div class="flame flame-a"></div>
+    <div class="flame flame-b"></div>
+    <div class="flame flame-c"></div>
+    <div class="glow-orb orb-a"></div>
+    <div class="glow-orb orb-b"></div>
+  </div>
+  <!-- 粒子光点 -->
+  <canvas id="fx-particles" aria-hidden="true"></canvas>
+  <!-- 底部科技网格地面 -->
+  <div class="grid-floor" aria-hidden="true"><div class="grid-plane"></div></div>
+
+  <div id="app-root">
+    <header id="app-header" class="glass"></header>
+    <nav id="app-tabs"></nav>
+    <main id="app-main"></main>
+  </div>
+
+  <div id="modal-root"></div>
+  <div id="toast-root"></div>
+  <div id="drawer-root"></div>
+
+  <!-- Monaco AMD loader（内置 assets，dev/打包/http 三环境同路径；失败时模板编辑器自动降级 textarea） -->
+  <script src="assets/monaco/vs/loader.js" onerror="window.__monacoLoaderFailed=true"></script>
+  <script type="module" src="../../dist/renderer/renderer/index.js"></script>
+</body>
+</html>

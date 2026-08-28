@@ -1,0 +1,31 @@
+node_modules/
+dist/
+release/
+build/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+
+# Coverage
+coverage/
+
+# Temp files
+*.tmp
+*.swp
+*.bak
+
+# Prompt files
+炫酷UI应用生成 - 英雄哪里出来.md
+提示词_模板生成器.md
+炫酷UI应用生成.md
+PRD_项目管理系统.md

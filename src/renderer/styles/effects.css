@@ -1,0 +1,129 @@
+/* ============ 特效层：火焰流光 / 粒子 / 网格地面 / 呼吸 / sin缓动 / 透视图标 / 告警脉冲 ============ */
+/* 光效颜色全部由主题变量驱动（PRD §8.3），切换主题即时换色 */
+
+/* 背景火焰流光带：transform 缓慢漂移，无剧烈闪动 */
+.bg-fx { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.flame { position: absolute; filter: blur(46px); opacity: 0.5; border-radius: 50%; will-change: transform; }
+.flame-a {
+  left: -12%; bottom: -18%; width: 60vw; height: 36vh;
+  background: radial-gradient(ellipse at 30% 70%, var(--fx-a), transparent 65%);
+  animation: flameDriftA 26s ease-in-out infinite alternate;
+}
+.flame-b {
+  right: -14%; top: -12%; width: 52vw; height: 40vh;
+  background: radial-gradient(ellipse at 70% 30%, var(--fx-b), transparent 62%);
+  animation: flameDriftB 32s ease-in-out infinite alternate;
+}
+.flame-c {
+  left: 30%; top: 38%; width: 36vw; height: 24vh;
+  background: radial-gradient(ellipse at 50% 50%, var(--fx-c), transparent 60%);
+  animation: flameDriftC 38s ease-in-out infinite alternate;
+}
+@keyframes flameDriftA {
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(6vw, -4vh, 0) scale(1.15); }
+}
+@keyframes flameDriftB {
+  from { transform: translate3d(0, 0, 0) scale(1.1); }
+  to { transform: translate3d(-5vw, 5vh, 0) scale(0.95); }
+}
+@keyframes flameDriftC {
+  from { transform: translate3d(-3vw, 0, 0); }
+  to { transform: translate3d(4vw, 3vh, 0); }
+}
+
+/* 光球呼吸 */
+.glow-orb {
+  position: absolute; width: 220px; height: 220px; border-radius: 50%;
+  filter: blur(60px); opacity: 0.35; will-change: transform;
+}
+.orb-a { left: 12%; top: 22%; background: var(--orb-a); animation: orbPulse 9s ease-in-out infinite alternate; }
+.orb-b { right: 18%; bottom: 26%; background: var(--orb-b); animation: orbPulse 11s ease-in-out infinite alternate-reverse; }
+@keyframes orbPulse { from { transform: translateY(0); } to { transform: translateY(-26px); } }
+
+/* 粒子光点画布（JS 按主题配色绘制，页面隐藏时暂停） */
+#fx-particles { position: fixed; inset: 0; z-index: 1; pointer-events: none; width: 100vw; height: 100vh; }
+
+/* 底部科技网格地面：perspective + rotateX，transform 位移滚动 */
+.grid-floor {
+  position: fixed; left: -10%; right: -10%; bottom: -2vh; height: 30vh; z-index: 0;
+  perspective: 520px; pointer-events: none; overflow: hidden;
+  -webkit-mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+}
+.grid-plane {
+  position: absolute; left: -25%; top: -60%; width: 150%; height: 220%;
+  background-image:
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+  background-size: 56px 56px;
+  transform-origin: 50% 0;
+  animation: gridTilt 16s linear infinite;
+  will-change: transform;
+}
+@keyframes gridTilt {
+  from { transform: rotateX(62deg) translate3d(0, 0, 0); }
+  to { transform: rotateX(62deg) translate3d(0, 56px, 0); }
+}
+
+/* 面板光晕缓慢呼吸：3.5s ease-in-out 无限循环 */
+.panel::after {
+  content: ""; position: absolute; inset: -1px; border-radius: inherit; pointer-events: none;
+  box-shadow: inset 0 0 30px rgba(var(--neon-rgb), 0.07), 0 0 24px rgba(var(--neon-rgb), 0.08);
+  opacity: 0.45; animation: haloBreath 3.5s ease-in-out infinite;
+}
+@keyframes haloBreath { 0%, 100% { opacity: 0.28; } 50% { opacity: 0.75; } }
+
+/* sin 语义上下缓动（低速持续，梯次错峰） */
+.idle-float { animation: idleFloat 7.5s ease-in-out infinite alternate; will-change: transform; }
+.idle-float.slow { animation-duration: 9.5s; }
+@keyframes idleFloat { from { transform: translateY(0); } to { transform: translateY(-5px); } }
+.stagger-1 { animation-delay: -1.2s; }
+.stagger-2 { animation-delay: -2.6s; }
+.stagger-3 { animation-delay: -4s; }
+.stagger-4 { animation-delay: -5.4s; }
+
+/* 仪表盘图标透视：绕 Y 轴向内旋转（低幅度摆动），悬浮回正 */
+.icon-tile {
+  width: 44px; height: 44px; border-radius: 11px; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(150deg, rgba(var(--neon-rgb), 0.22), rgba(var(--gold-rgb), 0.08));
+  border: 1px solid rgba(var(--gold-rgb), 0.4);
+  box-shadow: 0 0 16px rgba(var(--neon-rgb), 0.22), inset 0 0 12px rgba(var(--gold-rgb), 0.12);
+  color: var(--gold-hi);
+  transform: perspective(760px) rotateY(-26deg);
+  animation: iconTilt 6.5s ease-in-out infinite alternate;
+  transition: transform 0.3s var(--ease);
+}
+@keyframes iconTilt {
+  from { transform: perspective(760px) rotateY(-27deg) translateY(0); }
+  to { transform: perspective(760px) rotateY(-9deg) translateY(-2px); }
+}
+.icon-tile:hover { animation: none; transform: perspective(760px) rotateY(0deg) scale(1.06); }
+
+/* 悬浮上浮 + 边框增亮 */
+.hover-lift { transition: transform 0.2s var(--ease), box-shadow 0.2s var(--ease), border-color 0.2s var(--ease); }
+.hover-lift:hover {
+  transform: translateY(-3px);
+  border-color: rgba(var(--gold-rgb), 0.55);
+  box-shadow: 0 10px 26px rgba(var(--neon-rgb), 0.16), 0 0 20px rgba(var(--neon-rgb), 0.14);
+}
+
+/* 面板展开/收缩：宽高+透明度插值 320ms */
+.expanding { transition: width 0.32s var(--ease), height 0.32s var(--ease), opacity 0.32s var(--ease); }
+
+/* 告警脉冲：仅异常数据元素挂载（语义红，跨主题一致） */
+.alert-pulse { animation: alertPulse 1.6s ease-in-out infinite; }
+@keyframes alertPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 82, 45, 0.35); }
+  50% { box-shadow: 0 0 14px rgba(255, 82, 45, 0.85); }
+}
+.alert-text { color: var(--err); text-shadow: 0 0 8px rgba(211, 58, 42, 0.45); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01s !important;
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "pms-command-cockpit",
+  "productName": "项目管理系统-作战驾驶舱",
+  "version": "1.0.0",
+  "description": "轻量项目管理系统：仪表盘/甘特图/计划/需求/缺陷/模板中心 —— Electron 桌面应用（内存数据闭环）",
+  "main": "dist/cjs/main/main.js",
+  "author": "PMS",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/sync-monaco.mjs && tsc -p tsconfig.main.json && tsc -p tsconfig.renderer.json",
+    "start": "npm run build && electron .",
+    "start:fresh": "npm run build && electron . --fresh",
+    "serve:web": "node tools/serve.mjs",
+    "dist": "npm run build && electron-builder --win",
+    "dist:dir": "npm run build && electron-builder --win --dir",
+    "dist:icon": "node tools/set-icon.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "monaco-editor": "^0.52.0",
+    "rcedit": "^5.0.2",
+    "typescript": "^5.6.3"
+  },
+  "build": {
+    "appId": "com.pms.command-cockpit",
+    "productName": "项目管理系统",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/cjs/**",
+      "dist/renderer/**",
+      "src/renderer/index.html",
+      "src/renderer/styles/**",
+      "src/renderer/assets/**"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "artifactName": "PMS-Cockpit-Setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "PMS-Cockpit-Portable-${version}.${ext}"
+    }
+  }
+}

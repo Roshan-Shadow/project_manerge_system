@@ -824,13 +824,16 @@ export function openPhaseModal(phase?: Phase): void {
       currentDeliverables.set(t.id, t.deliverables.map((d) => ({ ...d })));
     }
 
-    const dSection = el('div', { cls: 'dlib', attrs: { style: 'margin-top:16px;border-top:1px solid var(--weak-line);padding-top:16px' } });
-    dSection.appendChild(el('h4', { text: '交付物管理（保存阶段时生效）' }));
+    const dSection = el('div', { cls: 'phase-dlib-section' });
+    const header = el('div', { cls: 'phase-dlib-header' });
+    header.appendChild(el('h4', { text: '交付物管理' }));
+    header.appendChild(el('span', { cls: 'hint', text: '保存阶段时生效' }));
+    dSection.appendChild(header);
 
-    const listWrap = el('div', { attrs: { style: 'max-height:240px;overflow-y:auto' } });
+    const listWrap = el('div', { cls: 'phase-dlib-list' });
     dSection.appendChild(listWrap);
 
-    const filterRow = el('div', { attrs: { style: 'display:flex;align-items:center;gap:8px;margin-bottom:10px' } });
+    const filterRow = el('div', { cls: 'phase-dlib-filter' });
     const taskFilter = el('select', { attrs: { title: '按任务筛选交付物' } }) as HTMLSelectElement;
     taskFilter.appendChild(el('option', { text: '全部任务', attrs: { value: '' } }));
     for (const t of phaseTasks) {
@@ -851,13 +854,16 @@ export function openPhaseModal(phase?: Phase): void {
         if (!uniqueNames.length) continue;
         hasAny = true;
 
-        const taskGroup = el('div', { attrs: { style: 'margin-bottom:10px' } });
-        taskGroup.appendChild(el('div', { attrs: { style: 'font-weight:600;font-size:12.5px;color:var(--gold-hi);margin-bottom:4px' }, text: t.title }));
+        const taskGroup = el('div', { cls: 'phase-dlib-task' });
+        const taskName = el('div', { cls: 'phase-dlib-task-name' });
+        taskName.appendChild(el('span', { text: t.title }));
+        taskName.appendChild(el('span', { cls: 'phase-dlib-task-cnt', text: `${uniqueNames.length} 项` }));
+        taskGroup.appendChild(taskName);
 
         for (const name of uniqueNames) {
           const items = deliverables.filter((d) => d.name === name);
-          const row = el('div', { attrs: { style: 'display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:var(--row-alt)' } });
-          const nameSpan = el('span', { text: name, attrs: { style: 'flex:1;font-size:12.5px;cursor:pointer;color:var(--text)' } });
+          const row = el('div', { cls: 'phase-dlib-item' });
+          const nameSpan = el('span', { cls: 'phase-dlib-item-name', text: name });
           nameSpan.title = '点击编辑名称';
           nameSpan.addEventListener('click', () => {
             const newName = prompt('修改交付物名称：', name);
@@ -870,7 +876,7 @@ export function openPhaseModal(phase?: Phase): void {
           });
           row.appendChild(nameSpan);
           row.appendChild(el('span', { cls: `chip ${items.some((d) => d.accepted) ? 'ok' : 'dim'}`, text: `${items.length} 条` }));
-          const delBtn = el('button', { cls: 'btn sm danger', text: '×', attrs: { type: 'button', style: 'flex:0 0 auto;padding:2px 6px' } });
+          const delBtn = el('button', { cls: 'btn sm danger', text: '×', attrs: { type: 'button' } });
           delBtn.addEventListener('click', async () => {
             if (!await confirmDialog('删除交付物', `确定删除「${name}」及其所有提交记录？`)) return;
             deliverableChanges.push({ action: 'delete', taskId: t.id, name });
@@ -885,21 +891,21 @@ export function openPhaseModal(phase?: Phase): void {
       }
 
       if (!hasAny) {
-        listWrap.appendChild(el('div', { cls: 'cell-dim', attrs: { style: 'padding:8px 0' }, text: '该阶段暂无交付物' }));
+        listWrap.appendChild(el('div', { cls: 'phase-dlib-empty', text: '该阶段暂无交付物' }));
       }
     }
 
     renderDeliverableList();
     taskFilter.addEventListener('change', renderDeliverableList);
 
-    const addForm = el('div', { attrs: { style: 'display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap' } });
+    const addForm = el('div', { cls: 'phase-dlib-add-form' });
     const taskSel = el('select', { attrs: { title: '选择任务' } }) as HTMLSelectElement;
     for (const t of phaseTasks) {
       taskSel.appendChild(el('option', { text: t.title, attrs: { value: t.id } }));
     }
-    const nameIn = el('input', { attrs: { type: 'text', placeholder: '交付物名称', style: 'flex:1;min-width:120px' } }) as HTMLInputElement;
-    const noteIn = el('input', { attrs: { type: 'text', placeholder: '备注（可选）', style: 'flex:1;min-width:100px' } }) as HTMLInputElement;
-    const addBtn = el('button', { cls: 'btn sm', text: '＋ 添加', attrs: { type: 'button', style: 'flex:0 0 auto' } });
+    const nameIn = el('input', { attrs: { type: 'text', placeholder: '交付物名称' } }) as HTMLInputElement;
+    const noteIn = el('input', { attrs: { type: 'text', placeholder: '备注（可选）' } }) as HTMLInputElement;
+    const addBtn = el('button', { cls: 'btn sm primary', text: '＋ 添加', attrs: { type: 'button' } });
     addBtn.addEventListener('click', () => {
       const taskId = taskSel.value;
       const dName = nameIn.value.trim();

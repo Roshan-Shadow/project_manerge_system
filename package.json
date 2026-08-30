@@ -1,7 +1,7 @@
 {
   "name": "pms-command-cockpit",
   "productName": "项目管理系统-作战驾驶舱",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "轻量项目管理系统：仪表盘/甘特图/计划/需求/缺陷/模板中心 —— Electron 桌面应用（内存数据闭环）",
   "main": "dist/cjs/main/main.js",
   "author": "PMS",

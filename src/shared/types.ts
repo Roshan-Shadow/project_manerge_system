@@ -32,6 +32,8 @@ export interface Phase {
   projectId: ID;
   name: string;
   order: number;
+  /** 阶段提示：说明该阶段要执行什么任务、怎么系统性有机地完成各项任务 */
+  tip?: string;
 }
 
 export interface Task {
@@ -51,6 +53,8 @@ export interface Task {
   completedAt: string;
   /** 首次进入「进行中」的日期（PLN-11 用时统计起点，YYYY-MM-DD） */
   startedAt?: string;
+  /** 任务提示：说明如何用AI完成该项目 */
+  tip?: string;
 }
 
 export interface Requirement {
@@ -90,6 +94,8 @@ export interface TplPhase {
   name: string;
   tasks: string[];
   taskDeliverables?: Record<number, TplDeliverable[]>;
+  /** 阶段提示：说明该阶段要执行什么任务、怎么系统性有机地完成各项任务 */
+  tip?: string;
 }
 
 export interface PmsTemplate {

@@ -146,7 +146,7 @@ export function buildProjectFromTemplate(
   const n = tpl.phases.length;
   let cursor = start;
   tpl.phases.forEach((ph, i) => {
-    const phase: Phase = { id: uid('ph'), projectId: id, name: ph.name, order: i + 1 };
+    const phase: Phase = { id: uid('ph'), projectId: id, name: ph.name, order: i + 1, tip: ph.tip || '' };
     db.phases.push(phase);
     const isLast = i === n - 1;
     const phaseEnd = isLast ? end : Math.min(end, start + Math.round((span * (i + 1)) / n) - DAY);
@@ -212,11 +212,12 @@ export function snapshotProjectAsTemplate(
       return {
         name: ph.name,
         tasks: phaseTasks.map((t) => t.title),
+        tip: ph.tip || '',
         ...(Object.keys(taskDeliverables).length ? { taskDeliverables } : {})
       };
     });
   const ungrouped = db.tasks.filter((t) => t.projectId === projectId && !t.phaseId);
-  if (ungrouped.length) phases.push({ name: '未分组', tasks: ungrouped.map((t) => t.title) });
+  if (ungrouped.length) phases.push({ name: '未分组', tasks: ungrouped.map((t) => t.title), tip: '' });
   const tpl: PmsTemplate = {
     id: uid('tpl'),
     name,

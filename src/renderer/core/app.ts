@@ -1,7 +1,7 @@
 import { DAY, addDays, fmtDate, parseDate, todayMs, todayStr } from '../../shared/date.js';
 import { AppSettings, HeatmapColor, Project, ProjectStatus, REPO_NAMINGS, RepoNaming } from '../../shared/types.js';
 import { store, isElectron } from './store.js';
-import { curProject, isTaskOpen, projectTasks, reload, state } from './state.js';
+import { curProject, isTaskOpen, projectTasks, completionPct, reload, state } from './state.js';
 import { THEMES, applyTheme, getTheme } from './theme.js';
 import { clear, el, buildForm, confirmDialog, promptDialog, icon, openModal, toast } from './dom.js';
 import { wait } from './dom.js';
@@ -95,8 +95,28 @@ export async function switchTab(id: string): Promise<void> {
 /** 任意数据变更后调用：重载内存仓库 → 刷新头部(含通知铃铛)/当前列表 */
 export async function refreshAll(): Promise<void> {
   await reload();
+  
+  // 检查项目进度，自动更新项目状态
+  await updateProjectStatus();
+  
   renderHeader();
   await renderTab(activeTab);
+}
+
+/** 检查项目进度，当实际进度达到100%时自动将项目状态设置为"已完成" */
+async function updateProjectStatus(): Promise<void> {
+  const projects = state.data?.projects || [];
+  for (const project of projects) {
+    if (project.status === '已完成' || project.status === '已暂停') continue;
+    
+    const tasks = state.data?.tasks?.filter((t) => t.projectId === project.id) || [];
+    if (!tasks.length) continue;
+    
+    const completion = completionPct(tasks);
+    if (completion >= 100) {
+      await store.update('project', project.id, { status: '已完成' });
+    }
+  }
 }
 
 function renderTabs(): void {

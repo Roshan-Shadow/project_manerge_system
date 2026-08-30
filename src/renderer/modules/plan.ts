@@ -1,6 +1,6 @@
 import { uid } from '../../shared/uid.js';
 import { Deliverable, Phase, Priority, Task, TaskStatus } from '../../shared/types.js';
-import { DAY, fmtDuration, parseDate, todayMs, todayStr } from '../../shared/date.js';
+import { DAY, fmtDate, fmtDuration, parseDate, todayMs, todayStr } from '../../shared/date.js';
 import { store, isElectron } from '../core/store.js';
 import { refreshAll, requireRepo } from '../core/app.js';
 import { buildForm, clear, confirmDialog, el, openModal, toast } from '../core/dom.js';
@@ -35,18 +35,22 @@ export function renderPlan(root: HTMLElement): void {
     rerenderList();
   });
   bar.append(search, statusSel, el('span', { cls: 'spacer' }));
-  const addPhase = el('button', { cls: 'btn', text: '＋ 阶段', attrs: { type: 'button' } });
-  addPhase.addEventListener('click', () => {
+  
+  // 整体导入按钮
+  const importBtn = el('button', { cls: 'btn', text: '整体导入', attrs: { type: 'button' } });
+  importBtn.addEventListener('click', () => {
     if (!curProject()) { toast('请先创建项目', 'warn'); return; }
-    openPhaseModal();
+    openImportModal();
   });
-  const addTask = el('button', { cls: 'btn primary', text: '＋ 新增任务', attrs: { type: 'button' } });
-  addTask.addEventListener('click', () => {
+  
+  // 编辑计划按钮（原任务编辑）
+  const taskEditBtn = el('button', { cls: 'btn primary', text: '编辑计划', attrs: { type: 'button' } });
+  taskEditBtn.addEventListener('click', () => {
     if (!curProject()) { toast('请先创建项目', 'warn'); return; }
-    if (!projectPhases().length) { toast('请先创建阶段', 'warn'); return; }
-    openTaskModal();
+    openTaskEditModal();
   });
-  bar.append(addPhase, addTask);
+  bar.append(importBtn, taskEditBtn);
+  
   root.appendChild(bar);
 
   const batchSlot = el('div');
@@ -149,15 +153,12 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
     const inner = el('div', { attrs: { style: 'display:flex;align-items:center;gap:8px' } });
     inner.appendChild(el('span', { text: `◆ ${g.phase ? g.phase.name : '未分组'}` }));
     inner.appendChild(el('span', { cls: 'cell-dim', text: `（${g.tasks.length}）` }));
-    const addIn = el('button', { cls: 'btn sm ghost', text: '＋任务', attrs: { type: 'button' } });
-    addIn.addEventListener('click', () => openTaskModal(undefined, g.phase?.id || ''));
-    inner.appendChild(addIn);
     if (g.phase) {
       const phFolder = el('button', {
         cls: 'btn sm ghost',
         text: '📁',
         attrs: { type: 'button' },
-        title: 'REPO-09：打开该阶段对应的仓库文件夹（阶段/任务 层级）'
+        title: `打开阶段「${g.phase.name}」文件夹`
       });
       phFolder.addEventListener('click', async () => {
         if (!isElectron) {
@@ -167,8 +168,8 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
         if (!(await requireRepo())) return;
         if (!(await store.openFolder('phase', g.phase!.id))) toast('文件夹打开失败（工作目录未设置？）', 'err');
       });
-      const edit = el('button', { cls: 'btn sm ghost', text: '编辑', attrs: { type: 'button' } });
-      edit.addEventListener('click', () => openPhaseModal(g.phase!));
+      const phTip = el('button', { cls: 'btn sm ghost', text: '💡', attrs: { type: 'button' }, title: '查看阶段提示' });
+      phTip.addEventListener('click', () => showPhaseTipModal(g.phase!));
       const del = el('button', { cls: 'btn sm ghost', text: '删除', attrs: { type: 'button' } });
       del.addEventListener('click', async () => {
         const cnt = projectTasks().filter((t) => t.phaseId === g.phase!.id).length;
@@ -181,7 +182,7 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
         toast('阶段已删除');
         await refreshAll();
       });
-      inner.append(phFolder, edit, del);
+      inner.append(phFolder, phTip, del);
     }
     gc.appendChild(inner);
     grow.appendChild(gc);
@@ -195,7 +196,7 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
     const r = el('tr');
     const c = el('td');
     c.colSpan = 12;
-    c.appendChild(el('div', { cls: 'empty-tip', html: '暂无任务数据 —— 点击【<b>＋ 新增任务</b>】创建第一条任务' }));
+    c.appendChild(el('div', { cls: 'empty-tip', html: '暂无任务数据 —— 点击【<b>任务编辑</b>】创建第一条任务' }));
     r.appendChild(c);
     tbody.appendChild(r);
   }
@@ -222,6 +223,330 @@ function taskDurationText(t: Task): string {
   else if (t.status === '进行中') end = todayMs();
   if (end == null) return '—';
   return fmtDuration(end - start);
+}
+
+/** 计划范式说明 */
+const PLAN_SCHEMA_HELP = `计划范式结构说明：
+
+{
+  "phases": [
+    {
+      "name": "阶段名称（必填）",
+      "tip": "阶段提示（可选）：说明该阶段要执行什么任务",
+      "tasks": ["任务1", "任务2"],
+      "taskDeliverables": {
+        "0": [{ "name": "交付物名称", "note": "说明（可选）" }]
+      }
+    }
+  ]
+}
+
+字段说明：
+- phases: 阶段数组（必填）
+  - name: 阶段名称（必填）
+  - tip: 阶段提示（可选）
+  - tasks: 任务名称数组（必填）
+  - taskDeliverables: 交付物配置（可选）
+    - key为任务索引（从0开始）
+    - value为该任务的交付物数组
+
+示例：
+{
+  "phases": [
+    {
+      "name": "需求分析",
+      "tip": "本阶段完成需求调研和分析",
+      "tasks": ["用户调研", "需求文档"],
+      "taskDeliverables": {
+        "0": [{ "name": "调研报告" }],
+        "1": [{ "name": "需求规格书" }]
+      }
+    },
+    {
+      "name": "开发",
+      "tasks": ["前端开发", "后端开发"]
+    }
+  ]
+}`;
+
+/** 整体导入弹窗 */
+function openImportModal(): void {
+  const m = openModal('整体导入');
+  m.el.classList.add('import-modal');
+  
+  // 版块1：选择JSON文件
+  const fileSection = el('div', { cls: 'import-section' });
+  const fileHeader = el('div', { cls: 'import-section-header' });
+  fileHeader.appendChild(el('h4', { text: '选择JSON文件' }));
+  fileSection.appendChild(fileHeader);
+  
+  const fileInput = el('input', { attrs: { type: 'file', accept: '.json', style: 'display:none;' } }) as HTMLInputElement;
+  const fileBtn = el('button', { cls: 'btn', text: '选择文件', attrs: { type: 'button' } });
+  const fileName = el('span', { cls: 'import-file-name', text: '未选择文件' });
+  fileBtn.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    if (file) {
+      fileName.textContent = file.name;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const content = e.target?.result as string;
+        jsonEditor.value = content;
+        validateJson(content);
+      };
+      reader.readAsText(file);
+    }
+  });
+  fileSection.append(fileBtn, fileName);
+  
+  // 版块2：制定计划框
+  const planSection = el('div', { cls: 'import-section' });
+  const planHeader = el('div', { cls: 'import-section-header' });
+  planHeader.appendChild(el('h4', { text: '制定计划框' }));
+  
+  // 范式说明按钮
+  const helpBtn = el('button', { cls: 'btn sm ghost', text: '🤖', attrs: { type: 'button' }, title: '查看计划范式说明' });
+  helpBtn.addEventListener('click', () => showPlanSchemaHelp());
+  planHeader.appendChild(helpBtn);
+  planSection.appendChild(planHeader);
+  
+  const editorWrap = el('div', { cls: 'import-editor-wrap' });
+  const lineNumbers = el('div', { cls: 'import-line-numbers' });
+  const jsonEditor = el('textarea', {
+    cls: 'import-json-editor',
+    attrs: { placeholder: '在此粘贴或输入JSON格式的计划...', spellcheck: 'false' }
+  }) as HTMLTextAreaElement;
+  
+  // 行号更新
+  const updateLineNumbers = () => {
+    const lines = jsonEditor.value.split('\n').length;
+    lineNumbers.innerHTML = Array.from({ length: lines }, (_, i) => `<div>${i + 1}</div>`).join('');
+  };
+  jsonEditor.addEventListener('input', () => {
+    updateLineNumbers();
+    validateJson(jsonEditor.value);
+  });
+  jsonEditor.addEventListener('scroll', () => {
+    lineNumbers.scrollTop = jsonEditor.scrollTop;
+  });
+  
+  editorWrap.append(lineNumbers, jsonEditor);
+  planSection.appendChild(editorWrap);
+  
+  // 操作按钮
+  const actionRow = el('div', { cls: 'import-actions' });
+  const formatBtn = el('button', { cls: 'btn sm ghost', text: '格式化', attrs: { type: 'button' } });
+  formatBtn.addEventListener('click', () => {
+    try {
+      const parsed = JSON.parse(jsonEditor.value);
+      jsonEditor.value = JSON.stringify(parsed, null, 2);
+      updateLineNumbers();
+      validateJson(jsonEditor.value);
+      toast('格式化成功', 'ok');
+    } catch (e) {
+      toast('JSON格式错误，无法格式化', 'err');
+    }
+  });
+  
+  const importConfirmBtn = el('button', { cls: 'btn primary', text: '导入', attrs: { type: 'button' } });
+  importConfirmBtn.addEventListener('click', async () => {
+    const result = validateJson(jsonEditor.value);
+    if (!result.valid) {
+      toast(result.error || 'JSON格式不正确', 'err');
+      return;
+    }
+    
+    try {
+      const data = JSON.parse(jsonEditor.value);
+      await importPlan(data);
+      m.close();
+      toast('计划导入成功', 'ok');
+      await refreshAll();
+    } catch (e) {
+      toast(`导入失败：${(e as Error).message}`, 'err');
+    }
+  });
+  
+  actionRow.append(formatBtn, importConfirmBtn);
+  planSection.appendChild(actionRow);
+  
+  m.body.append(fileSection, planSection);
+  
+  const closeBtn = el('button', { cls: 'btn ghost', text: '取消', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  m.foot.appendChild(closeBtn);
+  
+  // 初始化行号
+  updateLineNumbers();
+  
+  // 验证JSON
+  function validateJson(content: string): { valid: boolean; error?: string } {
+    try {
+      const data = JSON.parse(content);
+      if (!data.phases || !Array.isArray(data.phases)) {
+        return { valid: false, error: '缺少phases数组' };
+      }
+      for (const phase of data.phases) {
+        if (!phase.name) {
+          return { valid: false, error: '阶段缺少name字段' };
+        }
+        if (!phase.tasks || !Array.isArray(phase.tasks)) {
+          return { valid: false, error: `阶段「${phase.name}」缺少tasks数组` };
+        }
+      }
+      return { valid: true };
+    } catch (e) {
+      return { valid: false, error: `JSON解析错误：${(e as Error).message}` };
+    }
+  }
+}
+
+/** 显示计划范式说明 */
+function showPlanSchemaHelp(): void {
+  const m = openModal('计划范式说明');
+  m.el.classList.add('tip-modal');
+  
+  const header = el('div', { cls: 'tip-header' });
+  header.appendChild(el('span', { cls: 'tip-title', text: 'JSON格式计划范式' }));
+  const copyBtn = el('button', { cls: 'btn sm ghost', text: '📋 复制', attrs: { type: 'button' } });
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(PLAN_SCHEMA_HELP);
+      toast('已复制到剪贴板', 'ok');
+    } catch {
+      toast('复制失败', 'err');
+    }
+  });
+  header.appendChild(copyBtn);
+  m.body.appendChild(header);
+  
+  const content = el('div', { cls: 'tip-content' });
+  content.appendChild(el('div', { cls: 'tip-text', text: PLAN_SCHEMA_HELP }));
+  m.body.appendChild(content);
+  
+  const closeBtn = el('button', { cls: 'btn', text: '关闭', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  m.foot.appendChild(closeBtn);
+}
+
+/** 导入计划数据 */
+async function importPlan(data: { phases: Array<{ name: string; tip?: string; tasks: string[]; taskDeliverables?: Record<number, Array<{ name: string; note?: string }>> }> }): Promise<void> {
+  const prj = curProject();
+  if (!prj) return;
+  
+  // 获取现有阶段的最大order
+  const existingPhases = projectPhases();
+  let maxOrder = existingPhases.length > 0 ? Math.max(...existingPhases.map(p => p.order)) : 0;
+  
+  for (const phaseData of data.phases) {
+    maxOrder++;
+    // 创建阶段
+    const phasePayload = {
+      projectId: state.projectId,
+      name: phaseData.name,
+      order: maxOrder,
+      tip: phaseData.tip || ''
+    };
+    const phase = await store.create('phase', phasePayload) as Phase;
+    
+    // 创建任务
+    if (phaseData.tasks && phaseData.tasks.length > 0) {
+      const phaseStartTime = todayMs();
+      const taskDuration = 7 * DAY; // 每个任务默认7天
+      
+      for (let i = 0; i < phaseData.tasks.length; i++) {
+        const taskTitle = phaseData.tasks[i];
+        const taskStart = phaseStartTime + i * taskDuration;
+        const taskEnd = taskStart + (taskDuration - DAY);
+        
+        // 获取交付物
+        const deliverables = (phaseData.taskDeliverables?.[i] || []).map(d => ({
+          id: uid('dl'),
+          name: d.name,
+          note: d.note || '',
+          time: '',
+          accepted: false
+        }));
+        
+        await store.create('task', {
+          projectId: state.projectId,
+          phaseId: phase.id,
+          title: taskTitle,
+          owner: '',
+          startDate: fmtDate(taskStart),
+          endDate: fmtDate(taskEnd),
+          hours: 8,
+          progress: 0,
+          status: '待开始',
+          priority: 'P1',
+          desc: '',
+          tip: '',
+          deliverables,
+          completedAt: ''
+        });
+      }
+    }
+  }
+}
+
+/** 显示阶段提示弹窗 */
+function showPhaseTipModal(phase: Phase): void {
+  const m = openModal(`阶段提示 · ${phase.name}`);
+  m.el.classList.add('tip-modal');
+  
+  // 内容区域带复制按钮
+  const header = el('div', { cls: 'tip-header' });
+  header.appendChild(el('span', { cls: 'tip-title', text: '阶段提示' }));
+  const copyBtn = el('button', { cls: 'btn sm ghost', text: '📋 复制', attrs: { type: 'button' } });
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(tipText);
+      toast('已复制到剪贴板', 'ok');
+    } catch {
+      toast('复制失败', 'err');
+    }
+  });
+  header.appendChild(copyBtn);
+  m.body.appendChild(header);
+  
+  const content = el('div', { cls: 'tip-content' });
+  const tipText = phase.tip || '暂无阶段提示';
+  content.appendChild(el('div', { cls: 'tip-text', text: tipText }));
+  m.body.appendChild(content);
+  
+  const closeBtn = el('button', { cls: 'btn', text: '关闭', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  m.foot.appendChild(closeBtn);
+}
+
+/** 显示任务提示弹窗 */
+function showTaskTipModal(task: Task): void {
+  const m = openModal(`任务提示 · ${task.title}`);
+  m.el.classList.add('tip-modal');
+  
+  // 内容区域带复制按钮
+  const header = el('div', { cls: 'tip-header' });
+  header.appendChild(el('span', { cls: 'tip-title', text: '任务提示' }));
+  const copyBtn = el('button', { cls: 'btn sm ghost', text: '📋 复制', attrs: { type: 'button' } });
+  copyBtn.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(tipText);
+      toast('已复制到剪贴板', 'ok');
+    } catch {
+      toast('复制失败', 'err');
+    }
+  });
+  header.appendChild(copyBtn);
+  m.body.appendChild(header);
+  
+  const content = el('div', { cls: 'tip-content' });
+  const tipText = task.tip || '暂无任务提示';
+  content.appendChild(el('div', { cls: 'tip-text', text: tipText }));
+  m.body.appendChild(content);
+  
+  const closeBtn = el('button', { cls: 'btn', text: '关闭', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  m.foot.appendChild(closeBtn);
 }
 
 function taskRow(t: Task, t0: number): HTMLTableRowElement {
@@ -379,7 +704,7 @@ function taskRow(t: Task, t0: number): HTMLTableRowElement {
     cls: 'btn sm ghost',
     text: '📁',
     attrs: { type: 'button' },
-    title: 'REPO-09：打开该任务对应的仓库文件夹（阶段/任务 层级）'
+    title: `打开任务「${t.title}」文件夹`
   });
   folder.addEventListener('click', async () => {
     if (!isElectron) {
@@ -389,6 +714,8 @@ function taskRow(t: Task, t0: number): HTMLTableRowElement {
     if (!(await requireRepo())) return;
     if (!(await store.openFolder('task', t.id))) toast('文件夹打开失败（工作目录未设置？）', 'err');
   });
+  const tipBtn = el('button', { cls: 'btn sm ghost', text: '💡', attrs: { type: 'button' }, title: '查看任务提示' });
+  tipBtn.addEventListener('click', () => showTaskTipModal(t));
   const edit = el('button', { cls: 'btn sm ghost', text: '编辑', attrs: { type: 'button' } });
   edit.addEventListener('click', () => openTaskModal(t));
   const del = el('button', { cls: 'btn sm ghost', text: '删除', attrs: { type: 'button' } });
@@ -399,7 +726,7 @@ function taskRow(t: Task, t0: number): HTMLTableRowElement {
     toast('任务已删除');
     await refreshAll();
   });
-  opCell.append(folder, edit, del);
+  opCell.append(folder, tipBtn, edit, del);
   tr.appendChild(opCell);
   return tr;
 }
@@ -466,7 +793,8 @@ export function openTaskModal(t?: Task, phaseId: string = ''): void {
       { key: 'priority', label: '优先级', type: 'select', options: PRIORITIES.map((p) => ({ value: p, label: p })) },
       { key: 'status', label: '状态', type: 'select', options: TASK_STATUSES.map((s) => ({ value: s, label: s })) },
       { key: 'progress', label: '进度', type: 'range', min: 0, max: 100, step: 5 },
-      { key: 'desc', label: '任务描述', type: 'textarea', full: true, placeholder: '补充说明（可选）' }
+      { key: 'desc', label: '任务描述', type: 'textarea', full: true, placeholder: '补充说明（可选）' },
+      { key: 'tip', label: '任务提示', type: 'textarea', full: true, placeholder: '说明如何用AI完成该项目' }
     ],
     t
       ? { ...t }
@@ -508,6 +836,7 @@ export function openTaskModal(t?: Task, phaseId: string = ''): void {
       status: String(v.status) as TaskStatus,
       priority: String(v.priority) as Priority,
       desc: String(v.desc || ''),
+      tip: String(v.tip || ''),
       deliverables,
       startedAt,
       completedAt: String(v.status) === '已完成' ? (t?.completedAt || todayStr()) : (t?.completedAt || '')
@@ -524,6 +853,184 @@ export function openTaskModal(t?: Task, phaseId: string = ''): void {
   });
   cancel.addEventListener('click', () => m.close());
   m.foot.append(cancel, submit);
+}
+
+/* ---- 任务编辑弹窗：集成阶段和任务的增删改功能 ---- */
+export function openTaskEditModal(): void {
+  const prj = curProject();
+  if (!prj) {
+    toast('请先创建项目', 'warn');
+    return;
+  }
+  
+  const m = openModal('任务编辑');
+  m.el.classList.add('task-edit-modal');
+  
+  // 主容器
+  const container = el('div', { cls: 'task-edit-container' });
+  
+  // 顶部操作栏
+  const actionBar = el('div', { cls: 'task-edit-action-bar' });
+  
+  // 阶段筛选下拉
+  const phaseFilterWrap = el('div', { cls: 'task-edit-filter' });
+  phaseFilterWrap.appendChild(el('label', { text: '筛选阶段：' }));
+  const phaseFilter = el('select', { cls: 'task-edit-select', attrs: { title: '按阶段筛选' } }) as HTMLSelectElement;
+  phaseFilter.appendChild(el('option', { text: '全部阶段', attrs: { value: '' } }));
+  phaseFilterWrap.appendChild(phaseFilter);
+  actionBar.appendChild(phaseFilterWrap);
+  
+  // 状态筛选下拉
+  const statusFilterWrap = el('div', { cls: 'task-edit-filter' });
+  statusFilterWrap.appendChild(el('label', { text: '筛选状态：' }));
+  const statusFilter = el('select', { cls: 'task-edit-select', attrs: { title: '按状态筛选' } }) as HTMLSelectElement;
+  for (const s of ['全部', '待开始', '进行中', '已完成', '已取消']) {
+    statusFilter.appendChild(el('option', { text: s, attrs: { value: s === '全部' ? '' : s } }));
+  }
+  statusFilterWrap.appendChild(statusFilter);
+  actionBar.appendChild(statusFilterWrap);
+  
+  // 新增按钮组
+  const addBtnGroup = el('div', { cls: 'task-edit-add-group' });
+  const addPhaseBtn = el('button', { cls: 'btn sm primary', text: '＋ 阶段', attrs: { type: 'button' } });
+  addPhaseBtn.addEventListener('click', () => openPhaseModal());
+  const addTaskBtn = el('button', { cls: 'btn sm primary', text: '＋ 任务', attrs: { type: 'button' } });
+  addTaskBtn.addEventListener('click', () => {
+    if (!projectPhases().length) { toast('请先创建阶段', 'warn'); return; }
+    openTaskModal();
+  });
+  addBtnGroup.append(addPhaseBtn, addTaskBtn);
+  actionBar.appendChild(addBtnGroup);
+  
+  container.appendChild(actionBar);
+  
+  // 列表区域
+  const listContainer = el('div', { cls: 'task-edit-list-container' });
+  container.appendChild(listContainer);
+  
+  m.body.appendChild(container);
+  
+  // 渲染列表
+  function renderLists(): void {
+    clear(listContainer);
+    
+    const phases = projectPhases();
+    const tasks = projectTasks();
+    const selectedPhaseId = phaseFilter.value;
+    const selectedStatus = statusFilter.value;
+    
+    // 更新阶段筛选选项
+    clear(phaseFilter);
+    phaseFilter.appendChild(el('option', { text: '全部阶段', attrs: { value: '' } }));
+    for (const p of phases) {
+      const opt = el('option', { text: p.name, attrs: { value: p.id } });
+      if (p.id === selectedPhaseId) opt.selected = true;
+      phaseFilter.appendChild(opt);
+    }
+    
+    // 筛选任务
+    const filteredTasks = tasks.filter(t => {
+      if (selectedPhaseId && t.phaseId !== selectedPhaseId) return false;
+      if (selectedStatus && t.status !== selectedStatus) return false;
+      return true;
+    });
+    
+    // 按阶段分组显示
+    const groupedTasks = new Map<string, typeof tasks>();
+    for (const task of filteredTasks) {
+      const phaseId = task.phaseId || '';
+      if (!groupedTasks.has(phaseId)) groupedTasks.set(phaseId, []);
+      groupedTasks.get(phaseId)!.push(task);
+    }
+    
+    // 渲染阶段和任务
+    if (phases.length === 0 && filteredTasks.length === 0) {
+      listContainer.appendChild(el('div', { cls: 'task-edit-empty', html: '暂无阶段和任务<br>点击上方按钮添加' }));
+      return;
+    }
+    
+    // 渲染有任务的阶段
+    for (const phase of phases) {
+      const phaseTasks = groupedTasks.get(phase.id) || [];
+      if (selectedPhaseId && phase.id !== selectedPhaseId) continue;
+      
+      const phaseGroup = el('div', { cls: 'task-edit-group' });
+      
+      // 阶段标题行
+      const phaseRow = el('div', { cls: 'task-edit-phase-row' });
+      const phaseName = el('span', { cls: 'task-edit-phase-name', text: phase.name });
+      const phaseCount = el('span', { cls: 'task-edit-phase-count', text: `${phaseTasks.length}` });
+      const phaseActions = el('div', { cls: 'task-edit-phase-actions' });
+      
+      const editPhaseBtn = el('button', { cls: 'btn sm ghost', text: '编辑', attrs: { type: 'button', title: '编辑阶段名称' } });
+      editPhaseBtn.addEventListener('click', () => openPhaseModal(phase));
+      const deletePhaseBtn = el('button', { cls: 'btn sm ghost danger', text: '删除', attrs: { type: 'button', title: '删除阶段' } });
+      deletePhaseBtn.addEventListener('click', async () => {
+        const cnt = projectTasks().filter((t) => t.phaseId === phase.id).length;
+        const ok = await confirmDialog(
+          '删除阶段',
+          cnt ? `阶段「${phase.name}」下有 ${cnt} 个任务，删除后任务将变为未分组。确认删除？` : `确认删除阶段「${phase.name}」？`
+        );
+        if (!ok) return;
+        await store.remove('phase', [phase.id]);
+        toast('阶段已删除');
+        await refreshAll();
+        renderLists();
+      });
+      
+      phaseActions.append(editPhaseBtn, deletePhaseBtn);
+      phaseRow.append(phaseName, phaseCount, phaseActions);
+      phaseGroup.appendChild(phaseRow);
+      
+      // 渲染该阶段下的任务 - 使用胶囊标签形式
+      const taskCapsuleWrap = el('div', { cls: 'task-edit-capsule-wrap' });
+      for (const task of phaseTasks) {
+        const capsule = el('div', { cls: `task-edit-capsule task-edit-capsule-${task.status === '已完成' ? 'done' : task.status === '进行中' ? 'active' : 'pending'}` });
+        capsule.appendChild(el('span', { cls: 'task-edit-capsule-name', text: task.title }));
+        capsule.appendChild(el('span', { cls: 'task-edit-capsule-status', text: task.status === '已完成' ? '✓' : task.status === '进行中' ? '●' : '○' }));
+        capsule.addEventListener('click', () => openTaskModal(task));
+        capsule.title = `点击编辑「${task.title}」`;
+        taskCapsuleWrap.appendChild(capsule);
+      }
+      phaseGroup.appendChild(taskCapsuleWrap);
+      
+      listContainer.appendChild(phaseGroup);
+    }
+    
+    // 渲染未分组任务
+    const ungrouped = groupedTasks.get('') || [];
+    if (ungrouped.length && !selectedPhaseId) {
+      const phaseGroup = el('div', { cls: 'task-edit-group' });
+      const phaseRow = el('div', { cls: 'task-edit-phase-row' });
+      phaseRow.appendChild(el('span', { cls: 'task-edit-phase-name', text: '未分组' }));
+      phaseRow.appendChild(el('span', { cls: 'task-edit-phase-count', text: `${ungrouped.length}` }));
+      phaseGroup.appendChild(phaseRow);
+      
+      // 未分组任务也使用胶囊标签形式
+      const taskCapsuleWrap = el('div', { cls: 'task-edit-capsule-wrap' });
+      for (const task of ungrouped) {
+        const capsule = el('div', { cls: `task-edit-capsule task-edit-capsule-${task.status === '已完成' ? 'done' : task.status === '进行中' ? 'active' : 'pending'}` });
+        capsule.appendChild(el('span', { cls: 'task-edit-capsule-name', text: task.title }));
+        capsule.appendChild(el('span', { cls: 'task-edit-capsule-status', text: task.status === '已完成' ? '✓' : task.status === '进行中' ? '●' : '○' }));
+        capsule.addEventListener('click', () => openTaskModal(task));
+        capsule.title = `点击编辑「${task.title}」`;
+        taskCapsuleWrap.appendChild(capsule);
+      }
+      phaseGroup.appendChild(taskCapsuleWrap);
+      
+      listContainer.appendChild(phaseGroup);
+    }
+  }
+  
+  // 绑定筛选事件
+  phaseFilter.addEventListener('change', renderLists);
+  statusFilter.addEventListener('change', renderLists);
+  
+  renderLists();
+  
+  const closeBtn = el('button', { cls: 'btn', text: '关闭', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  m.foot.appendChild(closeBtn);
 }
 
 function deliverableSection(
@@ -809,7 +1316,10 @@ export function openPhaseModal(phase?: Phase): void {
   }
   const m = openModal(phase ? '编辑阶段' : '新增阶段');
   const form = buildForm(
-    [{ key: 'name', label: '阶段名称', type: 'text', required: true, placeholder: '如：需求评审' }],
+    [
+      { key: 'name', label: '阶段名称', type: 'text', required: true, placeholder: '如：需求评审' },
+      { key: 'tip', label: '阶段提示', type: 'textarea', full: true, placeholder: '说明该阶段要执行什么任务、怎么系统性有机地完成各项任务' }
+    ],
     phase ? { ...phase } : {}
   );
   m.body.appendChild(form.root);
@@ -824,23 +1334,58 @@ export function openPhaseModal(phase?: Phase): void {
       currentDeliverables.set(t.id, t.deliverables.map((d) => ({ ...d })));
     }
 
-    const dSection = el('div', { cls: 'phase-dlib-section' });
+    // 交付物管理容器 - 增加间距
+    const dSection = el('div', { cls: 'phase-dlib-section', attrs: { style: 'margin-top:28px;padding-top:20px;' } });
     const header = el('div', { cls: 'phase-dlib-header' });
     header.appendChild(el('h4', { text: '交付物管理' }));
     header.appendChild(el('span', { cls: 'hint', text: '保存阶段时生效' }));
     dSection.appendChild(header);
 
-    const listWrap = el('div', { cls: 'phase-dlib-list' });
-    dSection.appendChild(listWrap);
-
-    const filterRow = el('div', { cls: 'phase-dlib-filter' });
-    const taskFilter = el('select', { attrs: { title: '按任务筛选交付物' } }) as HTMLSelectElement;
+    // 任务筛选 - 单独一行，增加上下间距
+    const filterRow = el('div', { cls: 'phase-dlib-filter', attrs: { style: 'margin-bottom:16px;padding:10px 12px;background:var(--row-alt);border-radius:8px;display:flex;align-items:center;gap:12px;' } });
+    filterRow.appendChild(el('span', { attrs: { style: 'font-size:13px;color:var(--txt2);white-space:nowrap;' }, text: '按任务筛选：' }));
+    const taskFilter = el('select', { attrs: { title: '按任务筛选交付物', style: 'flex:1;' } }) as HTMLSelectElement;
     taskFilter.appendChild(el('option', { text: '全部任务', attrs: { value: '' } }));
     for (const t of phaseTasks) {
       taskFilter.appendChild(el('option', { text: t.title, attrs: { value: t.id } }));
     }
     filterRow.appendChild(taskFilter);
+    
+    // 删除全部交付物按钮
+    const deleteAllBtn = el('button', { cls: 'btn sm danger', text: '删除全部交付物', attrs: { type: 'button', style: 'white-space:nowrap;' } });
+    deleteAllBtn.addEventListener('click', async () => {
+      const allDeliverables: string[] = [];
+      for (const t of phaseTasks) {
+        const deliverables = currentDeliverables.get(t.id) || [];
+        const uniqueNames = [...new Set(deliverables.map((d) => d.name).filter((n) => n && n !== '__unassigned__'))];
+        allDeliverables.push(...uniqueNames);
+      }
+      const uniqueAll = [...new Set(allDeliverables)];
+      if (!uniqueAll.length) {
+        toast('该阶段暂无交付物', 'warn');
+        return;
+      }
+      const ok = await confirmDialog(
+        '删除全部交付物',
+        `确定删除该阶段下所有 ${uniqueAll.length} 个交付物及其提交记录？此操作不可恢复！`
+      );
+      if (!ok) return;
+      
+      // 清空所有任务的交付物
+      for (const t of phaseTasks) {
+        deliverableChanges.push({ action: 'delete', taskId: t.id, name: '__all__' });
+        currentDeliverables.set(t.id, []);
+      }
+      toast('已删除全部交付物');
+      renderDeliverableList();
+    });
+    filterRow.appendChild(deleteAllBtn);
+    
     dSection.appendChild(filterRow);
+
+    // 交付物列表
+    const listWrap = el('div', { cls: 'phase-dlib-list' });
+    dSection.appendChild(listWrap);
 
     function renderDeliverableList(): void {
       clear(listWrap);
@@ -930,7 +1475,7 @@ export function openPhaseModal(phase?: Phase): void {
     if (!form.check()) return;
     const v = form.values();
     if (phase) {
-      await store.update('phase', phase.id, { name: String(v.name) });
+      await store.update('phase', phase.id, { name: String(v.name), tip: String(v.tip || '') });
       // 应用交付物变更到对应任务
       for (const change of deliverableChanges) {
         const task = state.data?.tasks.find((t) => t.id === change.taskId);
@@ -939,7 +1484,12 @@ export function openPhaseModal(phase?: Phase): void {
         if (change.action === 'add') {
           newDeliverables = [...task.deliverables, { id: uid('dl'), name: change.name, note: change.note || '', time: '', accepted: false }];
         } else if (change.action === 'delete') {
-          newDeliverables = task.deliverables.filter((d) => d.name !== change.name);
+          // 处理删除全部交付物的情况
+          if (change.name === '__all__') {
+            newDeliverables = [];
+          } else {
+            newDeliverables = task.deliverables.filter((d) => d.name !== change.name);
+          }
         } else if (change.action === 'rename') {
           newDeliverables = task.deliverables.map((d) => d.name === change.name ? { ...d, name: change.newName! } : d);
         } else {
@@ -950,7 +1500,7 @@ export function openPhaseModal(phase?: Phase): void {
       toast('阶段已更新');
     } else {
       const order = projectPhases().length + 1;
-      await store.create('phase', { projectId: state.projectId, name: String(v.name), order });
+      await store.create('phase', { projectId: state.projectId, name: String(v.name), order, tip: String(v.tip || '') });
       toast('阶段已创建');
     }
     m.close();

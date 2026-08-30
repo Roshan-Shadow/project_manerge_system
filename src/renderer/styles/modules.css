@@ -443,3 +443,71 @@ body[data-theme='dawn'] .tpl-badge { color: #2b6cb8; }
 .repo-current-name { font-size: 15px; font-weight: 600; color: var(--gold-hi); }
 .repo-current-path { font-size: 12px; color: var(--dim); margin-top: 2px; word-break: break-all; }
 .repo-btn-row { display: flex; gap: 10px; }
+
+/* ============ 任务编辑弹窗 ============ */
+.task-edit-modal { width: 760px; max-width: 90vw; }
+.task-edit-container { display: flex; flex-direction: column; gap: 20px; }
+.task-edit-action-bar { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 16px 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--weak-line); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); }
+.task-edit-filter { display: flex; align-items: center; gap: 8px; }
+.task-edit-filter label { font-size: 14px; color: var(--txt2); white-space: nowrap; font-weight: 500; }
+.task-edit-select { padding: 8px 12px; border: 1px solid var(--weak-line); border-radius: 8px; background: var(--card); color: var(--txt); font-size: 14px; cursor: pointer; min-width: 120px; transition: border-color 0.2s; }
+.task-edit-select:hover { border-color: var(--gold-hi); }
+.task-edit-select:focus { outline: none; border-color: var(--gold); box-shadow: 0 0 0 2px rgba(var(--gold-rgb), 0.2); }
+.task-edit-add-group { display: flex; gap: 10px; margin-left: auto; }
+.task-edit-list-container { display: flex; flex-direction: column; gap: 16px; padding: 4px 0; }
+.task-edit-group { border: 1px solid var(--weak-line); border-radius: 12px; background: var(--card); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04); }
+.task-edit-phase-row { display: flex; align-items: center; gap: 10px; padding: 14px 18px; background: linear-gradient(135deg, var(--row-alt), transparent); border-bottom: 1px solid var(--weak-line); }
+.task-edit-phase-name { font-size: 15px; font-weight: 600; color: var(--txt); flex: 1; }
+.task-edit-phase-count { font-size: 13px; color: var(--dim); background: rgba(var(--neon-rgb), 0.12); padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+.task-edit-phase-actions { display: flex; gap: 8px; }
+.task-edit-task-row { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--weak-line); transition: background 0.2s; }
+.task-edit-task-row:last-child { border-bottom: none; }
+.task-edit-task-row:hover { background: rgba(var(--gold-rgb), 0.06); }
+.task-edit-task-info { flex: 1; min-width: 0; }
+.task-edit-task-title { font-size: 14px; font-weight: 500; color: var(--txt); display: block; margin-bottom: 4px; }
+.task-edit-task-meta { font-size: 13px; color: var(--dim); line-height: 1.4; }
+.task-edit-task-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin-left: 16px; }
+.task-edit-capsule-wrap { display: flex; flex-wrap: wrap; gap: 10px; padding: 14px 18px; }
+.task-edit-capsule {
+  display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px;
+  border-radius: 20px; font-size: 13px; cursor: pointer;
+  transition: all 0.2s var(--ease); border: 1px solid var(--weak-line);
+}
+.task-edit-capsule:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+.task-edit-capsule-name { color: var(--txt); font-weight: 500; }
+.task-edit-capsule-status { font-size: 10px; }
+.task-edit-capsule-pending { background: var(--card); }
+.task-edit-capsule-pending:hover { border-color: var(--dim); }
+.task-edit-capsule-pending .task-edit-capsule-status { color: var(--dim); }
+.task-edit-capsule-active { background: rgba(var(--gold-rgb), 0.1); border-color: var(--gold-hi); }
+.task-edit-capsule-active:hover { background: rgba(var(--gold-rgb), 0.18); }
+.task-edit-capsule-active .task-edit-capsule-status { color: var(--gold); }
+.task-edit-capsule-done { background: rgba(var(--neon-rgb), 0.08); border-color: rgba(29, 158, 95, 0.4); }
+.task-edit-capsule-done:hover { background: rgba(var(--neon-rgb), 0.14); }
+.task-edit-capsule-done .task-edit-capsule-name { text-decoration: line-through; color: var(--dim); }
+.task-edit-capsule-done .task-edit-capsule-status { color: var(--ok); }
+.task-edit-empty { color: var(--dim); font-size: 15px; text-align: center; padding: 56px 24px; line-height: 1.7; }
+.btn.sm.ghost.danger { color: var(--err); }
+.btn.sm.ghost.danger:hover { background: rgba(211, 58, 42, 0.1); border-color: var(--err); }
+
+/* ============ 提示弹窗 ============ */
+.tip-modal { width: 600px; max-width: 90vw; }
+.tip-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--weak-line); }
+.tip-title { font-size: 14px; font-weight: 600; color: var(--txt); }
+.tip-content { max-height: 50vh; overflow-y: auto; padding: 16px; background: var(--row-alt); border-radius: 10px; border: 1px solid var(--weak-line); }
+.tip-text { font-size: 14px; color: var(--txt); line-height: 1.7; white-space: pre-wrap; word-break: break-word; }
+
+/* ============ 整体导入弹窗 ============ */
+.import-modal { width: 700px; max-width: 90vw; }
+.import-section { margin-bottom: 20px; }
+.import-section:last-child { margin-bottom: 0; }
+.import-section-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.import-section-header h4 { margin: 0; font-size: 15px; font-weight: 600; color: var(--txt); }
+.import-file-name { font-size: 13px; color: var(--dim); margin-left: 12px; }
+.import-editor-wrap { display: flex; border: 1px solid var(--weak-line); border-radius: 8px; overflow: hidden; background: var(--card); }
+.import-line-numbers { width: 40px; padding: 12px 8px; background: var(--row-alt); color: var(--dim); font-size: 12px; line-height: 1.6; text-align: right; overflow: hidden; user-select: none; }
+.import-line-numbers div { height: 19.2px; }
+.import-json-editor { flex: 1; padding: 12px; border: none; font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; line-height: 1.6; resize: vertical; min-height: 200px; background: transparent; color: var(--txt); }
+.import-json-editor:focus { outline: none; }
+.import-json-editor::placeholder { color: var(--dim); }
+.import-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }

@@ -2,6 +2,7 @@ node_modules/
 dist/
 release/
 build/
+docs/
 *.log
 
 # OS files
@@ -29,3 +30,5 @@ coverage/
 提示词_模板生成器.md
 炫酷UI应用生成.md
 PRD_项目管理系统.md
+AGENTS.md
+CONTEXT.md

@@ -99,6 +99,8 @@ export interface PmsTemplate {
   builtin: boolean;
   phases: TplPhase[];
   createdAt: string;
+  /** 磁盘上的原始文件名（不含 .json），用于定位 template/ 目录下的文件；无则回退到 name */
+  fileName?: string;
 }
 
 /** 项目仓库目录命名方式（SET-02） */
@@ -240,6 +242,8 @@ export interface PmsApi {
   saveTemplateFile(id: string, data: Record<string, unknown>): Promise<boolean>;
   /** 从 template/ 目录删除模板文件（按名称） */
   deleteTemplateFile(id: string, name?: string): Promise<boolean>;
+  /** 打开 template/ 文件夹 */
+  openTemplateFolder(): Promise<boolean>;
 }
 
 export type RepoDefaults = Omit<AppSettings, 'workDir'>;

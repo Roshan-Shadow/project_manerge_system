@@ -1,5 +1,5 @@
 import { PmsTemplate, TplPhase } from '../../shared/types.js';
-import { store } from '../core/store.js';
+import { store, isElectron } from '../core/store.js';
 import { openCreateProjectModal, refreshAll, requireRepo } from '../core/app.js';
 import { getTheme } from '../core/theme.js';
 import { buildForm, clear, confirmDialog, el, openModal, toast } from '../core/dom.js';
@@ -13,7 +13,12 @@ export function renderTemplates(root: HTMLElement): void {
   saveBtn.addEventListener('click', async () => { if (await requireRepo()) openSaveAsTemplateModal(); });
   const addBtn = el('button', { cls: 'btn primary', text: '＋ 新增空白模板', attrs: { type: 'button' } });
   addBtn.addEventListener('click', async () => { if (await requireRepo()) openNewTemplateModal(); });
-  bar.append(saveBtn, el('span', { cls: 'spacer' }), addBtn);
+  const folderBtn = el('button', { cls: 'btn ghost', text: '📂 模板仓库', attrs: { type: 'button' }, title: '打开 template 文件夹查看模板 JSON 文件' });
+  folderBtn.addEventListener('click', async () => {
+    if (!isElectron) { toast('文件夹跳转仅桌面版支持', 'warn'); return; }
+    await store.openTemplateFolder();
+  });
+  bar.append(saveBtn, el('span', { cls: 'spacer' }), addBtn, folderBtn);
   root.appendChild(bar);
 
   const grid = el('div', { cls: 'tpl-grid' });
@@ -53,14 +58,15 @@ function tplCard(t: PmsTemplate): HTMLElement {
   edit.addEventListener('click', () => openTplDrawer(t));
   const copy = el('button', { cls: 'btn sm ghost', text: '复制', attrs: { type: 'button' }, title: '复制为自定义模板（可重命名/删除）' });
   copy.addEventListener('click', async () => {
+    const newName = `${t.name} 副本`;
     const newTpl = await store.create('template', {
-      name: `${t.name} 副本`,
+      name: newName,
       category: t.category,
       builtin: false,
       phases: t.phases
     }) as PmsTemplate;
-    await store.saveTemplateFile(newTpl.id, { name: newTpl.name, category: newTpl.category, phases: newTpl.phases });
-    toast(`已复制为自定义模板「${t.name} 副本」`);
+    await store.saveTemplateFile(newTpl.id, { name: newName, category: newTpl.category, phases: newTpl.phases });
+    toast(`已复制为自定义模板「${newName}」`);
     await refreshAll();
   });
   actions.append(edit, copy);
@@ -72,7 +78,7 @@ function tplCard(t: PmsTemplate): HTMLElement {
       const ok = await confirmDialog('删除模板', `确认删除自定义模板「${t.name}」？`);
       if (!ok) return;
       await store.remove('template', [t.id]);
-      await store.deleteTemplateFile(t.id, t.name);
+      await store.deleteTemplateFile(t.id, t.fileName || t.name);
       toast('模板已删除');
       await refreshAll();
     });
@@ -114,7 +120,7 @@ function openSaveAsTemplateModal(): void {
       name: String(v.name),
       category: String(v.category)
     });
-    await store.saveTemplateFile(tpl.id, { name: tpl.name, category: tpl.category, phases: tpl.phases });
+    await store.saveTemplateFile(tpl.id, { name: tpl.name, category: tpl.category, phases: tpl.phases, fileName: tpl.name });
     m.close();
     toast(`模板「${tpl.name}」已保存（${tpl.phases.length} 阶段）`);
     await refreshAll();
@@ -139,13 +145,14 @@ function openNewTemplateModal(): void {
   submit.addEventListener('click', async () => {
     if (!form.check()) return;
     const v = form.values();
+    const tplName = String(v.name);
     const tpl = await store.create('template', {
-      name: String(v.name),
+      name: tplName,
       category: String(v.category),
       builtin: false,
       phases: []
     }) as PmsTemplate;
-    await store.saveTemplateFile(tpl.id, { name: tpl.name, category: tpl.category, phases: [] });
+    await store.saveTemplateFile(tpl.id, { name: tplName, category: String(v.category), phases: [], fileName: tplName });
     m.close();
     toast('模板已创建，点击【编辑】定义结构');
     await refreshAll();
@@ -169,13 +176,14 @@ function openRenameModal(t: PmsTemplate): void {
   submit.addEventListener('click', async () => {
     if (!form.check()) return;
     const v = form.values();
-    const oldName = t.name;
-    const updated = await store.update('template', t.id, { name: String(v.name), category: String(v.category) }) as PmsTemplate;
+    const oldFileName = t.fileName || t.name;
+    const newFileName = String(v.name);
+    const updated = await store.update('template', t.id, { name: newFileName, category: String(v.category), fileName: newFileName }) as PmsTemplate;
     // 删除旧名称文件，保存新名称文件
-    if (oldName !== updated.name) {
-      await store.deleteTemplateFile(t.id, oldName);
+    if (oldFileName !== newFileName) {
+      await store.deleteTemplateFile(t.id, oldFileName);
     }
-    await store.saveTemplateFile(t.id, { name: updated.name, category: updated.category, phases: updated.phases });
+    await store.saveTemplateFile(t.id, { name: updated.name, category: updated.category, phases: updated.phases, fileName: newFileName });
     m.close();
     toast('模板已更新');
     await refreshAll();
@@ -278,7 +286,7 @@ export function openTplDrawer(t: PmsTemplate): void {
     err.textContent = '';
     const obj = JSON.parse(editor.getValue()) as { phases: TplPhase[] };
     await store.update('template', t.id, { phases: obj.phases });
-    await store.saveTemplateFile(t.id, { name: t.name, category: t.category, phases: obj.phases });
+    await store.saveTemplateFile(t.id, { name: t.name, category: t.category, phases: obj.phases, fileName: t.fileName || t.name });
     toast(`模板「${t.name}」结构已保存`);
     close();
     await refreshAll();

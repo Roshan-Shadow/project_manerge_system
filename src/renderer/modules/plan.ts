@@ -813,6 +813,111 @@ export function openPhaseModal(phase?: Phase): void {
     phase ? { ...phase } : {}
   );
   m.body.appendChild(form.root);
+
+  // 交付物管理（编辑阶段时可用）
+  let deliverableChanges: Array<{ action: 'add' | 'delete' | 'rename'; taskId: string; name: string; newName?: string; note?: string }> = [];
+  const currentDeliverables: Map<string, Deliverable[]> = new Map();
+
+  if (phase) {
+    const phaseTasks = projectTasks().filter((t) => t.phaseId === phase.id);
+    for (const t of phaseTasks) {
+      currentDeliverables.set(t.id, t.deliverables.map((d) => ({ ...d })));
+    }
+
+    const dSection = el('div', { cls: 'dlib', attrs: { style: 'margin-top:16px;border-top:1px solid var(--weak-line);padding-top:16px' } });
+    dSection.appendChild(el('h4', { text: '交付物管理（保存阶段时生效）' }));
+
+    const listWrap = el('div', { attrs: { style: 'max-height:240px;overflow-y:auto' } });
+    dSection.appendChild(listWrap);
+
+    const filterRow = el('div', { attrs: { style: 'display:flex;align-items:center;gap:8px;margin-bottom:10px' } });
+    const taskFilter = el('select', { attrs: { title: '按任务筛选交付物' } }) as HTMLSelectElement;
+    taskFilter.appendChild(el('option', { text: '全部任务', attrs: { value: '' } }));
+    for (const t of phaseTasks) {
+      taskFilter.appendChild(el('option', { text: t.title, attrs: { value: t.id } }));
+    }
+    filterRow.appendChild(taskFilter);
+    dSection.appendChild(filterRow);
+
+    function renderDeliverableList(): void {
+      clear(listWrap);
+      const filterId = taskFilter.value;
+      let hasAny = false;
+
+      for (const t of phaseTasks) {
+        if (filterId && t.id !== filterId) continue;
+        const deliverables = currentDeliverables.get(t.id) || [];
+        const uniqueNames = [...new Set(deliverables.map((d) => d.name).filter((n) => n && n !== '__unassigned__'))];
+        if (!uniqueNames.length) continue;
+        hasAny = true;
+
+        const taskGroup = el('div', { attrs: { style: 'margin-bottom:10px' } });
+        taskGroup.appendChild(el('div', { attrs: { style: 'font-weight:600;font-size:12.5px;color:var(--gold-hi);margin-bottom:4px' }, text: t.title }));
+
+        for (const name of uniqueNames) {
+          const items = deliverables.filter((d) => d.name === name);
+          const row = el('div', { attrs: { style: 'display:flex;align-items:center;gap:6px;padding:6px 10px;border-radius:6px;margin-bottom:4px;background:var(--row-alt)' } });
+          const nameSpan = el('span', { text: name, attrs: { style: 'flex:1;font-size:12.5px;cursor:pointer;color:var(--text)' } });
+          nameSpan.title = '点击编辑名称';
+          nameSpan.addEventListener('click', () => {
+            const newName = prompt('修改交付物名称：', name);
+            if (newName && newName.trim() && newName.trim() !== name) {
+              deliverableChanges.push({ action: 'rename', taskId: t.id, name, newName: newName.trim() });
+              const updated = (currentDeliverables.get(t.id) || []).map((d) => d.name === name ? { ...d, name: newName.trim() } : d);
+              currentDeliverables.set(t.id, updated);
+              renderDeliverableList();
+            }
+          });
+          row.appendChild(nameSpan);
+          row.appendChild(el('span', { cls: `chip ${items.some((d) => d.accepted) ? 'ok' : 'dim'}`, text: `${items.length} 条` }));
+          const delBtn = el('button', { cls: 'btn sm danger', text: '×', attrs: { type: 'button', style: 'flex:0 0 auto;padding:2px 6px' } });
+          delBtn.addEventListener('click', async () => {
+            if (!await confirmDialog('删除交付物', `确定删除「${name}」及其所有提交记录？`)) return;
+            deliverableChanges.push({ action: 'delete', taskId: t.id, name });
+            const updated = (currentDeliverables.get(t.id) || []).filter((d) => d.name !== name);
+            currentDeliverables.set(t.id, updated);
+            renderDeliverableList();
+          });
+          row.appendChild(delBtn);
+          taskGroup.appendChild(row);
+        }
+        listWrap.appendChild(taskGroup);
+      }
+
+      if (!hasAny) {
+        listWrap.appendChild(el('div', { cls: 'cell-dim', attrs: { style: 'padding:8px 0' }, text: '该阶段暂无交付物' }));
+      }
+    }
+
+    renderDeliverableList();
+    taskFilter.addEventListener('change', renderDeliverableList);
+
+    const addForm = el('div', { attrs: { style: 'display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap' } });
+    const taskSel = el('select', { attrs: { title: '选择任务' } }) as HTMLSelectElement;
+    for (const t of phaseTasks) {
+      taskSel.appendChild(el('option', { text: t.title, attrs: { value: t.id } }));
+    }
+    const nameIn = el('input', { attrs: { type: 'text', placeholder: '交付物名称', style: 'flex:1;min-width:120px' } }) as HTMLInputElement;
+    const noteIn = el('input', { attrs: { type: 'text', placeholder: '备注（可选）', style: 'flex:1;min-width:100px' } }) as HTMLInputElement;
+    const addBtn = el('button', { cls: 'btn sm', text: '＋ 添加', attrs: { type: 'button', style: 'flex:0 0 auto' } });
+    addBtn.addEventListener('click', () => {
+      const taskId = taskSel.value;
+      const dName = nameIn.value.trim();
+      if (!taskId) { toast('请选择任务', 'warn'); return; }
+      if (!dName) { toast('请填写交付物名称', 'warn'); nameIn.focus(); return; }
+      const newDel: Deliverable = { id: uid('dl'), name: dName, note: noteIn.value.trim(), time: '', accepted: false };
+      const existing = currentDeliverables.get(taskId) || [];
+      currentDeliverables.set(taskId, [...existing, newDel]);
+      deliverableChanges.push({ action: 'add', taskId, name: dName, note: noteIn.value.trim() });
+      nameIn.value = '';
+      noteIn.value = '';
+      renderDeliverableList();
+    });
+    addForm.append(taskSel, nameIn, noteIn, addBtn);
+    dSection.appendChild(addForm);
+    m.body.appendChild(dSection);
+  }
+
   const submit = el('button', { cls: 'btn primary', text: phase ? '保存' : '创建阶段', attrs: { type: 'button' } });
   const cancel = el('button', { cls: 'btn ghost', text: '取消', attrs: { type: 'button' } });
   submit.addEventListener('click', async () => {
@@ -820,6 +925,22 @@ export function openPhaseModal(phase?: Phase): void {
     const v = form.values();
     if (phase) {
       await store.update('phase', phase.id, { name: String(v.name) });
+      // 应用交付物变更到对应任务
+      for (const change of deliverableChanges) {
+        const task = state.data?.tasks.find((t) => t.id === change.taskId);
+        if (!task) continue;
+        let newDeliverables: Deliverable[];
+        if (change.action === 'add') {
+          newDeliverables = [...task.deliverables, { id: uid('dl'), name: change.name, note: change.note || '', time: '', accepted: false }];
+        } else if (change.action === 'delete') {
+          newDeliverables = task.deliverables.filter((d) => d.name !== change.name);
+        } else if (change.action === 'rename') {
+          newDeliverables = task.deliverables.map((d) => d.name === change.name ? { ...d, name: change.newName! } : d);
+        } else {
+          continue;
+        }
+        await store.update('task', change.taskId, { deliverables: newDeliverables });
+      }
       toast('阶段已更新');
     } else {
       const order = projectPhases().length + 1;

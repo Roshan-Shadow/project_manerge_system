@@ -121,6 +121,9 @@ class LocalStore implements PmsApi {
   async deleteTemplateFile(_id: string, _name?: string): Promise<boolean> {
     return false;
   }
+  async openTemplateFolder(): Promise<boolean> {
+    return false;
+  }
 }
 
 const bridge = (window as unknown as { pmsApi?: PmsApi }).pmsApi;

@@ -180,7 +180,7 @@ export function registerIpcHandlers(winGetter: () => BrowserWindow | null): void
     if (!s.workDir) return false;
     const tplDir = path.join(s.workDir, 'template');
     fs.mkdirSync(tplDir, { recursive: true });
-    const name = String(data.name || '未命名模板').replace(/[\\/:*?"<>|]/g, '_');
+    const name = String(data.fileName || data.name || '未命名模板').replace(/[\\/:*?"<>|]/g, '_');
     fs.writeFileSync(path.join(tplDir, `${name}.json`), JSON.stringify(data, null, 2), 'utf-8');
     return true;
   });
@@ -190,7 +190,18 @@ export function registerIpcHandlers(winGetter: () => BrowserWindow | null): void
     if (!name) return false;
     const safeName = String(name).replace(/[\\/:*?"<>|]/g, '_');
     const f = path.join(s.workDir, 'template', `${safeName}.json`);
-    if (fs.existsSync(f)) fs.unlinkSync(f);
+    if (fs.existsSync(f)) {
+      fs.unlinkSync(f);
+      return true;
+    }
+    return false;
+  });
+  ipcMain.handle(IPC.TEMPLATE_OPEN_FOLDER, () => {
+    const s = getSettings();
+    if (!s.workDir) return false;
+    const tplDir = path.join(s.workDir, 'template');
+    fs.mkdirSync(tplDir, { recursive: true });
+    void shell.openPath(tplDir);
     return true;
   });
 }

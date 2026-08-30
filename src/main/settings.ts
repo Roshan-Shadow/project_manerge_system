@@ -228,7 +228,7 @@ function restoreProjectsFromWorkspace(db: DbShape, workDir: string): number {
   return restored;
 }
 
-/** 扫描 <工作目录>/template 下的 .json 模板文件，加载到 db.templates；名称冲突时追加 Customer 后缀 */
+/** 扫描 <工作目录>/template 下的 .json 模板文件，加载到 db.templates；名称冲突时追加显示后缀但保留原始文件名 */
 function loadCustomTemplates(db: DbShape, workDir: string): number {
   const tplDir = path.join(workDir, 'template');
   let loaded = 0;
@@ -245,20 +245,23 @@ function loadCustomTemplates(db: DbShape, workDir: string): number {
     try {
       const raw = JSON.parse(fs.readFileSync(path.join(tplDir, e.name), 'utf-8'));
       if (!raw || !Array.isArray(raw.phases)) continue;
-      // 构建模板对象
+      const originalName = raw.name || e.name.replace(/\.json$/, '');
+      const diskFileName = e.name.replace(/\.json$/, '');
+      // 构建模板对象：name 保持磁盘原始值，冲突时在显示上追加后缀
+      let displayName = originalName;
+      if (existingNames.has(displayName)) {
+        displayName = `${displayName}_Customer`;
+      }
+      existingNames.add(displayName);
       const tpl: PmsTemplate = {
         id: `tpl_custom_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        name: raw.name || e.name.replace(/\.json$/, ''),
+        name: displayName,
         category: raw.category || '自定义',
         builtin: false,
         phases: raw.phases,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        fileName: diskFileName
       };
-      // 名称冲突处理：追加 Customer 后缀
-      if (existingNames.has(tpl.name)) {
-        tpl.name = `${tpl.name}_Customer`;
-      }
-      existingNames.add(tpl.name);
       db.templates.push(tpl);
       loaded += 1;
     } catch {

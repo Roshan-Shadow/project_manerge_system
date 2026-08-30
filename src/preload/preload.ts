@@ -44,7 +44,8 @@ const api: PmsApi = {
   getRepoDefaults: () => ipcRenderer.invoke(IPC.REPO_DEFAULTS_GET),
   saveRepoDefaults: (patch) => ipcRenderer.invoke(IPC.REPO_DEFAULTS_SET, patch),
   saveTemplateFile: (id: string, data: Record<string, unknown>) => ipcRenderer.invoke(IPC.TEMPLATE_SAVE_FILE, id, data),
-  deleteTemplateFile: (id: string, name?: string) => ipcRenderer.invoke(IPC.TEMPLATE_DELETE_FILE, id, name)
+  deleteTemplateFile: (id: string, name?: string) => ipcRenderer.invoke(IPC.TEMPLATE_DELETE_FILE, id, name),
+  openTemplateFolder: () => ipcRenderer.invoke(IPC.TEMPLATE_OPEN_FOLDER)
 };
 
 contextBridge.exposeInMainWorld('pmsApi', api);

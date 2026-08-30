@@ -1,4 +1,4 @@
-/** 多主题体系（PRD §8.3）：四套主题，CSS 自定义属性换色 + Canvas/粒子/Monaco 联动 */
+/** 多主题体系（PRD §8.3）：六套主题，CSS 自定义属性换色 + Canvas/粒子/Monaco 联动 */
 export interface ThemeDef {
   id: string;
   label: string;
@@ -75,6 +75,38 @@ export const THEMES: ThemeDef[] = [
       cool: 'rgba(224,82,31,',
       warmShadow: 'rgba(210,130,60,.7)',
       coolShadow: 'rgba(224,82,31,.6)'
+    },
+    monacoTheme: 'pms-light'
+  },
+  {
+    id: 'twilight',
+    label: '暮霭柔光',
+    desc: '薰衣草灰 × 玫瑰金',
+    dark: false,
+    swatch: ['#c77dba', '#8b6b8d'],
+    accent1: '#c77dba',
+    accent2: '#8b6b8d',
+    particle: {
+      warm: 'rgba(199,125,186,',
+      cool: 'rgba(139,107,141,',
+      warmShadow: 'rgba(199,125,186,.7)',
+      coolShadow: 'rgba(139,107,141,.6)'
+    },
+    monacoTheme: 'pms-light'
+  },
+  {
+    id: 'skyline',
+    label: '晴空素笺',
+    desc: '天蓝 × 云白',
+    dark: false,
+    swatch: ['#4a90d9', '#7ab3e8'],
+    accent1: '#4a90d9',
+    accent2: '#7ab3e8',
+    particle: {
+      warm: 'rgba(122,179,232,',
+      cool: 'rgba(74,144,217,',
+      warmShadow: 'rgba(122,179,232,.7)',
+      coolShadow: 'rgba(74,144,217,.6)'
     },
     monacoTheme: 'pms-light'
   }

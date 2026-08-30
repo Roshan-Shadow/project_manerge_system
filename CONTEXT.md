@@ -32,3 +32,9 @@ _Avoid_: 交付件
 
 **Custom Template（自定义模板）**：
 用户创建或从项目另存为的模板，以 JSON 文件持久化于 `<workDir>/template/<name>.json`。支持重命名、删除、编辑结构。模板对象携带 `fileName` 字段记录磁盘上的原始文件名，解决名称冲突时的文件定位问题。
+
+**Bulk Import（整体导入）**：
+计划模块的新功能，允许用户通过JSON文件或文本编辑器批量导入项目计划。支持阶段和任务的批量创建，自动设置默认工期。导入前会验证JSON结构是否符合规范。
+
+**Import Schema（导入范式）**：
+整体导入功能使用的JSON数据结构规范，包含 `phases` 数组，每个阶段有 `name`、`tip`（可选）、`tasks` 数组和 `taskDeliverables`（可选）字段。

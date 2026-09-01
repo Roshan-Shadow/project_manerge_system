@@ -124,6 +124,12 @@ class LocalStore implements PmsApi {
   async openTemplateFolder(): Promise<boolean> {
     return false;
   }
+  async importFromJson(): Promise<Project> {
+    throw new Error('浏览器预览不支持导入');
+  }
+  async importFromZip(): Promise<Project> {
+    throw new Error('浏览器预览不支持导入');
+  }
 }
 
 const bridge = (window as unknown as { pmsApi?: PmsApi }).pmsApi;

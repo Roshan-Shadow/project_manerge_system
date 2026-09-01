@@ -16,12 +16,18 @@
     "dist:icon": "node tools/set-icon.js"
   },
   "devDependencies": {
+    "@types/archiver": "^8.0.0",
     "@types/node": "^22.10.0",
+    "@types/unzipper": "^0.10.11",
     "electron": "^33.2.0",
     "electron-builder": "^25.1.8",
     "monaco-editor": "^0.52.0",
     "rcedit": "^5.0.2",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "unzipper": "^0.12.3"
   },
   "build": {
     "appId": "com.pms.command-cockpit",

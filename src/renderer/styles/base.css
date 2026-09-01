@@ -288,7 +288,7 @@ body {
   content: ""; width: 7px; height: 7px; border-radius: 50%;
   background: var(--neon); box-shadow: 0 0 10px var(--neon); flex: 0 0 auto;
 }
-.panel-title .title-extra { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+.panel-title .title-extra { margin-left: auto; display: flex; gap: 8px; align-items: center; position: relative; }
 
 /* 头部 */
 #app-header {
@@ -319,8 +319,8 @@ body {
   position: relative; border: 1px solid transparent; background: transparent;
   color: var(--txt2); padding: 7px 18px; border-radius: var(--r-sm);
   font-size: 13.5px; letter-spacing: 0.12em; cursor: pointer; font-family: inherit;
-  transition: color 0.22s var(--ease), transform 0.22s var(--ease),
-    background 0.22s var(--ease), border-color 0.22s var(--ease), box-shadow 0.22s var(--ease);
+  transition: color 0.15s var(--ease), transform 0.15s var(--ease),
+    background 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
 }
 .tab-btn:hover { color: var(--gold-hi); transform: translateY(-1px); }
 .tab-btn.active {
@@ -333,11 +333,11 @@ body {
 
 /* 主区 & 视图切换 */
 #app-main { flex: 1; min-height: 0; position: relative; overflow: hidden; }
-.pane { height: 100%; overflow: auto; padding: 2px 2px 12px; }
-.pane-leave { animation: paneLeave 0.18s var(--ease) forwards; }
-.pane-enter { animation: paneEnter 0.26s var(--ease) both; }
-@keyframes paneLeave { to { opacity: 0; transform: translateY(-10px); } }
-@keyframes paneEnter { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+.pane { height: 100%; overflow: auto; padding: 2px 2px 12px; will-change: transform, opacity; }
+.pane-leave { animation: paneLeave 0.12s var(--ease) forwards; }
+.pane-enter { animation: paneEnter 0.15s var(--ease) both; }
+@keyframes paneLeave { to { opacity: 0; transform: translateY(-8px); } }
+@keyframes paneEnter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
 /* 按钮 */
 .btn {
@@ -520,3 +520,101 @@ body[data-theme='skyline'] .chip.red { color: #a32417; }
   border: 2px solid transparent; background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: rgba(var(--neon-rgb), 0.5); background-clip: content-box; }
+
+/* 导出项目对话框 */
+.export-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+}
+
+.export-section-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold-hi);
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.export-path-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.export-path-display {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: var(--panel-strong);
+  border: 1px solid var(--line);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-checkbox {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.export-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.export-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.export-checkbox span {
+  font-size: 13px;
+  color: var(--txt);
+}
+
+.export-checkbox .f-hint {
+  margin-top: 2px;
+}
+
+/* 导出下拉菜单 */
+.export-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 6px;
+  min-width: 200px;
+  padding: 6px 0;
+  border-radius: 8px;
+  z-index: 100;
+  background: var(--panel-strong);
+  border: 1px solid var(--line-soft);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.export-menu-item {
+  padding: 10px 16px;
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--txt);
+  transition: background 0.15s, border-color 0.15s;
+  border-radius: 4px;
+  margin: 2px 4px;
+  border: 1px solid transparent;
+}
+
+.export-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--neon);
+}

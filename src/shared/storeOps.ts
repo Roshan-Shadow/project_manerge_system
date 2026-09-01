@@ -107,7 +107,7 @@ export function removeRows(db: DbShape, e: EntityName, ids: ID[]): void {
     db.bugs = db.bugs.filter((b) => !set.has(b.projectId));
   }
   if (e === 'phase') {
-    for (const t of db.tasks) if (set.has(t.phaseId)) t.phaseId = '';
+    db.tasks = db.tasks.filter((t) => !set.has(t.phaseId));
   }
   if (e === 'task') {
     for (const r of db.requirements) {
@@ -146,7 +146,7 @@ export function buildProjectFromTemplate(
   const n = tpl.phases.length;
   let cursor = start;
   tpl.phases.forEach((ph, i) => {
-    const phase: Phase = { id: uid('ph'), projectId: id, name: ph.name, order: i + 1, tip: ph.tip || '' };
+    const phase: Phase = { id: uid('ph'), projectId: id, name: ph.name, order: i + 1, tip: ph.phases_tip || '' };
     db.phases.push(phase);
     const isLast = i === n - 1;
     const phaseEnd = isLast ? end : Math.min(end, start + Math.round((span * (i + 1)) / n) - DAY);
@@ -158,6 +158,7 @@ export function buildProjectFromTemplate(
       const s = phStart + Math.min(j * dur, phaseDays - 1) * DAY;
       const e2 = Math.max(Math.min(s + (dur - 1) * DAY, phaseEnd), s);
       const tplDeliverables = ph.taskDeliverables?.[j] || [];
+      const taskTip = ph.task_tip?.[j] || '';
       db.tasks.push({
         id: uid('t'),
         projectId: id,
@@ -170,7 +171,7 @@ export function buildProjectFromTemplate(
         progress: 0,
         status: '待开始',
         priority: 'P1',
-        desc: '',
+        desc: taskTip,
         deliverables: tplDeliverables.map((d) => ({
           id: uid('dl'),
           name: d.name,
@@ -203,21 +204,26 @@ export function snapshotProjectAsTemplate(
     .map((ph) => {
       const phaseTasks = db.tasks.filter((t) => t.phaseId === ph.id);
       const taskDeliverables: Record<number, { name: string; note?: string }[]> = {};
+      const taskTips: string[] = [];
       phaseTasks.forEach((t, idx) => {
         if (t.deliverables.length) {
           const unique = [...new Map(t.deliverables.map((d) => [d.name, d])).values()];
           taskDeliverables[idx] = unique.map((d) => ({ name: d.name, note: d.note || undefined }));
         }
+        if (t.desc) {
+          taskTips[idx] = t.desc;
+        }
       });
       return {
         name: ph.name,
         tasks: phaseTasks.map((t) => t.title),
-        tip: ph.tip || '',
+        phases_tip: ph.tip || '',
+        ...(taskTips.length ? { task_tip: taskTips } : {}),
         ...(Object.keys(taskDeliverables).length ? { taskDeliverables } : {})
       };
     });
   const ungrouped = db.tasks.filter((t) => t.projectId === projectId && !t.phaseId);
-  if (ungrouped.length) phases.push({ name: '未分组', tasks: ungrouped.map((t) => t.title), tip: '' });
+  if (ungrouped.length) phases.push({ name: '未分组', tasks: ungrouped.map((t) => t.title), phases_tip: '' });
   const tpl: PmsTemplate = {
     id: uid('tpl'),
     name,
@@ -353,9 +359,14 @@ export function importArchive(db: DbShape, archive: ProjectArchive): Project {
   const phaseMap = new Map<ID, ID>();
   const taskMap = new Map<ID, ID>();
   const reqMap = new Map<ID, ID>();
-  const name = db.projects.some((p) => p.name === archive.project.name)
-    ? `${archive.project.name}（导入）`
-    : archive.project.name;
+  let name = archive.project.name;
+  if (db.projects.some((p) => p.name === name)) {
+    let seq = 1;
+    do {
+      name = `${archive.project.name}_${String(seq).padStart(2, '0')}`;
+      seq++;
+    } while (db.projects.some((p) => p.name === name));
+  }
   const project: Project = { ...clone(archive.project), id: uid('prj'), name };
   db.projects.push(project);
   for (const ph of archive.phases) {

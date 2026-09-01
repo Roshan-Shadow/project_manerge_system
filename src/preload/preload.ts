@@ -22,7 +22,7 @@ const api: PmsApi = {
   saveProjectAsTemplate: (input: SaveAsTemplateInput) =>
     ipcRenderer.invoke(IPC.SAVE_AS_TEMPLATE, input),
   openRepo: (projectId: ID) => ipcRenderer.invoke(IPC.REPO_OPEN, projectId),
-  exportProject: (projectId: ID) => ipcRenderer.invoke(IPC.EXPORT_PROJECT, projectId),
+  exportProject: (projectId: ID, exportWithZip: boolean = false) => ipcRenderer.invoke(IPC.EXPORT_PROJECT, projectId, exportWithZip),
   importProject: () => ipcRenderer.invoke(IPC.IMPORT_PROJECT),
   getSettings: () => ipcRenderer.invoke(IPC.SETTINGS_GET),
   saveSettings: (patch: Partial<AppSettings>) => ipcRenderer.invoke(IPC.SETTINGS_SET, patch),
@@ -45,7 +45,9 @@ const api: PmsApi = {
   saveRepoDefaults: (patch) => ipcRenderer.invoke(IPC.REPO_DEFAULTS_SET, patch),
   saveTemplateFile: (id: string, data: Record<string, unknown>) => ipcRenderer.invoke(IPC.TEMPLATE_SAVE_FILE, id, data),
   deleteTemplateFile: (id: string, name?: string) => ipcRenderer.invoke(IPC.TEMPLATE_DELETE_FILE, id, name),
-  openTemplateFolder: () => ipcRenderer.invoke(IPC.TEMPLATE_OPEN_FOLDER)
+  openTemplateFolder: () => ipcRenderer.invoke(IPC.TEMPLATE_OPEN_FOLDER),
+  importFromJson: () => ipcRenderer.invoke(IPC.IMPORT_FROM_JSON),
+  importFromZip: () => ipcRenderer.invoke(IPC.IMPORT_FROM_ZIP)
 };
 
 contextBridge.exposeInMainWorld('pmsApi', api);

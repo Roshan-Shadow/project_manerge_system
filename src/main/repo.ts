@@ -1,6 +1,7 @@
 import { BrowserWindow, dialog, shell } from 'electron';
 import fs from 'node:fs';
 import path from 'node:path';
+import unzipper from 'unzipper';
 import {
   DbShape,
   buildArchive,
@@ -8,6 +9,7 @@ import {
   computeTaskDirs,
   createEmptyDb,
   importArchive,
+  numberedPhaseDirName,
   phaseDirName,
   repoDirName,
   repoRelFolders,
@@ -177,6 +179,103 @@ export function phaseAbsDir(db: DbShape, phaseId: string): string | null {
   const abs = path.join(base, `${num}_${sanitizeFolderName(ph.name)}`);
   fs.mkdirSync(abs, { recursive: true });
   return abs;
+}
+
+/**
+ * 删除任务后，重编号受影响阶段内的剩余任务文件夹。
+ * 必须在 removeRows 之前调用（此时 DB 中仍包含被删任务）。
+ * 被删任务的文件夹由调用方（store handler）负责删除。
+ * @param deletedTaskIds 本次删除的任务 ID 集合
+ */
+export function renumberTaskFolders(
+  db: DbShape,
+  projectId: string,
+  deletedTaskIds: string[]
+): void {
+  const base = ensureRepo(db, projectId);
+  if (!base) return;
+
+  const deletedSet = new Set(deletedTaskIds);
+  const allTasks = db.tasks.filter((t) => t.projectId === projectId);
+  const phases = db.phases.filter((p) => p.projectId === projectId).sort((a, b) => a.order - b.order);
+
+  for (const ph of phases) {
+    const phaseTasks = allTasks.filter((t) => t.phaseId === ph.id).sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    if (phaseTasks.length === 0) continue;
+
+    const phaseIdx = phases.findIndex((p) => p.id === ph.id);
+    const phaseDirName = numberedPhaseDirName(ph, phaseIdx);
+    const phaseDir = path.join(base, phaseDirName);
+    if (!fs.existsSync(phaseDir)) continue;
+
+    // 剩余任务（排除被删的）
+    const remainingTasks = phaseTasks.filter((t) => !deletedSet.has(t.id));
+
+    // 收集需要重命名的旧/新路径对
+    const renames: [string, string][] = [];
+
+    for (let newIdx = 0; newIdx < remainingTasks.length; newIdx++) {
+      const t = remainingTasks[newIdx];
+      const tf = sanitizeFolderName(t.title) || '任务';
+      const oldIdx = phaseTasks.findIndex((x) => x.id === t.id);
+      const oldDirName = `${String(oldIdx + 1).padStart(2, '0')}_${tf}`;
+      const newDirName = `${String(newIdx + 1).padStart(2, '0')}_${tf}`;
+      const oldDir = path.join(phaseDir, oldDirName);
+      const newDir = path.join(phaseDir, newDirName);
+      if (oldDirName !== newDirName && fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+        renames.push([oldDir, newDir]);
+      }
+    }
+
+    // 按旧编号升序执行重命名，避免冲突（如 03→02 须在 02→01 之后）
+    for (const [oldDir, newDir] of renames) {
+      try { fs.renameSync(oldDir, newDir); } catch { /* skip */ }
+    }
+  }
+}
+
+/**
+ * 删除阶段后，重编号剩余阶段文件夹。
+ * 必须在 removeRows 之前调用（此时 DB 中仍包含被删阶段）。
+ * 被删阶段的文件夹由调用方（store handler）负责删除。
+ * @param deletedPhaseIds 本次删除的阶段 ID 集合
+ */
+export function renumberPhaseFolders(
+  db: DbShape,
+  projectId: string,
+  deletedPhaseIds: string[]
+): void {
+  const base = ensureRepo(db, projectId);
+  if (!base) return;
+
+  const deletedSet = new Set(deletedPhaseIds);
+
+  // 全量排序（含即将删除的阶段）
+  const allPhases = db.phases
+    .filter((p) => p.projectId === projectId)
+    .sort((a, b) => a.order - b.order);
+  // 剩余阶段
+  const remainingPhases = allPhases.filter((p) => !deletedSet.has(p.id));
+
+  // 收集需要重命名的旧/新路径对
+  const renames: [string, string][] = [];
+
+  for (let newIdx = 0; newIdx < remainingPhases.length; newIdx++) {
+    const ph = remainingPhases[newIdx];
+    const oldIdx = allPhases.findIndex((p) => p.id === ph.id);
+    const oldDirName = numberedPhaseDirName(ph, oldIdx);
+    const newDirName = numberedPhaseDirName(ph, newIdx);
+    const oldDir = path.join(base, oldDirName);
+    const newDir = path.join(base, newDirName);
+    if (oldDirName !== newDirName && fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+      renames.push([oldDir, newDir]);
+    }
+  }
+
+  // 按旧编号升序执行重命名，避免冲突（如 03→02 须在 02→01 之后）
+  for (const [oldDir, newDir] of renames) {
+    try { fs.renameSync(oldDir, newDir); } catch { /* skip */ }
+  }
 }
 
 /** 重名冲突时追加日期序号：name.ext → name_20260823_1.ext */
@@ -386,46 +485,159 @@ export function deleteDeliverableFiles(db: DbShape, taskId: string, deliverableN
   }
 }
 
-/** REPO-04 导出快照：另存对话框 → 单个 .json 迁移文件 */
+/** REPO-04 导出项目：另存对话框 → .json 配置文件 或 .zip 压缩包（含项目数据） */
 export async function repoExport(
   win: BrowserWindow | null,
   db: DbShape,
-  projectId: string
+  projectId: string,
+  exportWithZip: boolean = false
 ): Promise<string | null> {
   const archive = buildArchive(db, projectId);
   if (!archive) throw new Error('项目不存在');
-  const res = await dialog.showSaveDialog(win!, {
-    title: '导出项目快照（迁移文件）',
-    defaultPath: `${archive.project.name}-快照.json`,
-    filters: [{ name: 'PMS 项目快照', extensions: ['json'] }]
-  });
-  if (res.canceled || !res.filePath) return null;
-  fs.writeFileSync(res.filePath, JSON.stringify(archive, null, 2), 'utf-8');
-  try {
-    ensureRepo(db, projectId);
-  } catch {
-    /* 导出为主，仓库刷新失败可忽略 */
+  
+  if (exportWithZip) {
+    // 导出为 .zip 压缩包（含项目配置 + 仓库数据）
+    const res = await dialog.showSaveDialog(win!, {
+      title: '导出项目（含数据）',
+      defaultPath: `${archive.project.name}-项目数据.zip`,
+      filters: [{ name: 'PMS 项目压缩包', extensions: ['zip'] }]
+    });
+    if (res.canceled || !res.filePath) return null;
+    
+    // 确保仓库存在
+    let repoDir: string | null = null;
+    try {
+      repoDir = ensureRepo(db, projectId);
+    } catch {
+      /* 仓库创建失败不阻塞导出 */
+    }
+    
+    // 动态导入 archiver（ESM 模块 v8 使用 ZipArchive 类）
+    const { ZipArchive } = await eval('import("archiver")') as any;
+    
+    return new Promise<string | null>((resolve, reject) => {
+      const output = fs.createWriteStream(res.filePath);
+      const zip = new ZipArchive({ zlib: { level: 9 } });
+      let done = false;
+      
+      const finish = () => {
+        if (!done) {
+          done = true;
+          output.end(() => resolve(res.filePath));
+        }
+      };
+      
+      const onError = (err: Error) => {
+        if (!done) {
+          done = true;
+          try { output.destroy(); } catch {}
+          reject(err);
+        }
+      };
+      
+      output.on('error', onError);
+      zip.on('error', onError);
+      zip.on('warning', (warn: any) => {
+        if (warn.code === 'ENOENT') return; // 忽略目录不存在警告
+        onError(warn);
+      });
+      
+      // 等待输出流关闭（所有数据写入完成）
+      output.on('close', finish);
+      
+      zip.pipe(output);
+      
+      if (repoDir && fs.existsSync(repoDir)) {
+        zip.directory(repoDir, false);
+      }
+      
+      zip.finalize();
+    });
+  } else {
+    // 导出为 .json 配置文件
+    const res = await dialog.showSaveDialog(win!, {
+      title: '导出项目配置',
+      defaultPath: `${archive.project.name}-配置.json`,
+      filters: [{ name: 'PMS 项目配置', extensions: ['json'] }]
+    });
+    if (res.canceled || !res.filePath) return null;
+    
+    fs.writeFileSync(res.filePath, JSON.stringify(archive, null, 2), 'utf-8');
+    try {
+      ensureRepo(db, projectId);
+    } catch {
+      /* 导出为主，仓库刷新失败可忽略 */
+    }
+    return res.filePath;
   }
-  return res.filePath;
 }
 
-/** REPO-05 导入快照：打开对话框 → 校验 → 重建项目与子数据 + 仓库 */
+/** 验证项目归档结构是否有效 */
+function validateArchiveStructure(archive: any): { valid: boolean; error?: string } {
+  if (!archive || typeof archive !== 'object') {
+    return { valid: false, error: '文件内容不是有效的 JSON 对象' };
+  }
+  
+  if (archive.format !== 'pms-project-archive') {
+    return { valid: false, error: '非项目配置文件，导入失败！' };
+  }
+  
+  if (!archive.project || typeof archive.project !== 'object') {
+    return { valid: false, error: '缺少 project 字段' };
+  }
+  
+  const project = archive.project;
+  if (!project.id || !project.name || !project.startDate || !project.endDate) {
+    return { valid: false, error: 'project 字段缺少必要属性（id/name/startDate/endDate）' };
+  }
+  
+  if (archive.phases && !Array.isArray(archive.phases)) {
+    return { valid: false, error: 'phases 字段不是数组' };
+  }
+  
+  if (archive.tasks && !Array.isArray(archive.tasks)) {
+    return { valid: false, error: 'tasks 字段不是数组' };
+  }
+  
+  if (archive.requirements && !Array.isArray(archive.requirements)) {
+    return { valid: false, error: 'requirements 字段不是数组' };
+  }
+  
+  if (archive.bugs && !Array.isArray(archive.bugs)) {
+    return { valid: false, error: 'bugs 字段不是数组' };
+  }
+  
+  return { valid: true };
+}
+
+/** REPO-05 导入项目：打开对话框 → 校验 → 重建项目与子数据 + 仓库 */
 export async function repoImport(win: BrowserWindow | null, db: DbShape): Promise<Project> {
   const res = await dialog.showOpenDialog(win!, {
-    title: '导入项目快照（迁移文件）',
-    filters: [{ name: 'PMS 项目快照', extensions: ['json'] }],
+    title: '导入项目',
+    filters: [
+      { name: 'PMS 项目文件', extensions: ['json'] },
+      { name: 'JSON 配置文件', extensions: ['json'] }
+    ],
     properties: ['openFile']
   });
+  
   if (res.canceled || !res.filePaths.length) throw new Error('__CANCELED__');
+  
+  const filePath = res.filePaths[0];
+  
+  // 处理 JSON 文件
   let archive: ProjectArchive;
   try {
-    archive = JSON.parse(fs.readFileSync(res.filePaths[0], 'utf-8')) as ProjectArchive;
+    archive = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ProjectArchive;
   } catch {
-    throw new Error('文件读取或解析失败，请确认是有效的 JSON 快照');
+    throw new Error('文件读取或解析失败，请确认是有效的 JSON 文件');
   }
-  if (!archive || archive.format !== 'pms-project-archive' || !archive.project) {
-    throw new Error('不是有效的 PMS 项目快照文件（缺少 format/project 字段）');
+  
+  const validation = validateArchiveStructure(archive);
+  if (!validation.valid) {
+    throw new Error(validation.error || '非项目配置文件，导入失败！');
   }
+  
   const project = importArchive(db, archive);
   try {
     ensureRepo(db, project.id);
@@ -433,6 +645,118 @@ export async function repoImport(win: BrowserWindow | null, db: DbShape): Promis
     /* 数据已导入，仓库失败不阻塞 */
   }
   return project;
+}
+
+/** 导入项目配置文件（JSON） */
+export async function repoImportFromJson(win: BrowserWindow | null, db: DbShape): Promise<Project> {
+  const res = await dialog.showOpenDialog(win!, {
+    title: '导入项目配置文件',
+    filters: [
+      { name: 'PMS 项目配置', extensions: ['json'] }
+    ],
+    properties: ['openFile']
+  });
+  
+  if (res.canceled || !res.filePaths.length) throw new Error('__CANCELED__');
+  
+  const filePath = res.filePaths[0];
+  
+  let archive: ProjectArchive;
+  try {
+    archive = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ProjectArchive;
+  } catch {
+    throw new Error('文件读取或解析失败，请确认是有效的 JSON 文件');
+  }
+  
+  const validation = validateArchiveStructure(archive);
+  if (!validation.valid) {
+    throw new Error(validation.error || '非项目配置文件，导入失败！');
+  }
+  
+  const project = importArchive(db, archive);
+  try {
+    ensureRepo(db, project.id);
+  } catch {
+    /* 数据已导入，仓库失败不阻塞 */
+  }
+  return project;
+}
+
+/** 导入项目数据（ZIP） */
+export async function repoImportFromZip(win: BrowserWindow | null, db: DbShape): Promise<Project> {
+  const res = await dialog.showOpenDialog(win!, {
+    title: '导入项目数据',
+    filters: [
+      { name: 'PMS 项目数据', extensions: ['zip'] }
+    ],
+    properties: ['openFile']
+  });
+  
+  if (res.canceled || !res.filePaths.length) throw new Error('__CANCELED__');
+  
+  const zipPath = res.filePaths[0];
+  
+  // 创建临时目录用于解压
+  const tmpDir = path.join(require('os').tmpdir(), `pms-import-${Date.now()}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  
+  try {
+    // 解压ZIP文件到临时目录
+    await fs.createReadStream(zipPath)
+      .pipe(unzipper.Extract({ path: tmpDir }))
+      .promise();
+    
+    // 读取project.json
+    const pjPath = path.join(tmpDir, 'project.json');
+    if (!fs.existsSync(pjPath)) {
+      throw new Error('ZIP文件中缺少project.json文件');
+    }
+    
+    const archive: ProjectArchive = JSON.parse(fs.readFileSync(pjPath, 'utf-8'));
+    
+    // 验证结构
+    const validation = validateArchiveStructure(archive);
+    if (!validation.valid) {
+      throw new Error(validation.error || '非项目配置文件，导入失败！');
+    }
+    
+    // 导入项目
+    const project = importArchive(db, archive);
+    
+    // 复制仓库文件到项目目录
+    const repoDir = ensureRepo(db, project.id);
+    if (repoDir) {
+      // 复制解压的文件到项目仓库目录（跳过project.json）
+      copyDirSync(tmpDir, repoDir, ['project.json']);
+    }
+    
+    return project;
+  } finally {
+    // 清理临时目录
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      // 清理失败不阻塞导入
+    }
+  }
+}
+
+/** 递归复制目录，可跳过指定文件 */
+function copyDirSync(src: string, dest: string, skipFiles: string[] = []): void {
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    
+    if (entry.isDirectory()) {
+      fs.mkdirSync(destPath, { recursive: true });
+      copyDirSync(srcPath, destPath, skipFiles);
+    } else {
+      if (!skipFiles.includes(entry.name)) {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  }
 }
 
 /** PMS_SMOKE 自检：模板建项目 → 建仓库（阶段/任务层级）→ 回读 project.json → 恢复去重 → 提交目录定位 */

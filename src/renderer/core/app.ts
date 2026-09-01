@@ -28,6 +28,8 @@ const TABS = [
 let activeTab = 'mainpage';
 let switching = false;
 const cleanups: Array<() => void> = [];
+// Tab 缓存：存储已渲染的 Tab DOM，避免重复渲染
+const tabCache = new Map<string, HTMLElement>();
 
 export function registerCleanup(fn: () => void): void {
   cleanups.push(fn);
@@ -46,34 +48,48 @@ function runCleanups(): void {
 async function renderTab(id: string): Promise<void> {
   runCleanups();
   const main = document.getElementById('app-main')!;
-  clear(main);
-  const pane = el('div', { cls: 'pane pane-enter' });
-  main.appendChild(pane);
-  switch (id) {
-    case 'mainpage':
-      await renderMainPage(pane);
-      break;
-    case 'home':
-      renderHome(pane);
-      break;
-    case 'dashboard':
-      await renderDashboard(pane);
-      break;
-    case 'gantt':
-      renderGantt(pane);
-      break;
-    case 'plan':
-      renderPlan(pane);
-      break;
-    case 'requirement':
-      renderRequirement(pane);
-      break;
-    case 'bug':
-      renderBug(pane);
-      break;
-    case 'template':
-      renderTemplates(pane);
-      break;
+  
+  // 检查缓存中是否已有该 Tab 的 DOM
+  let pane = tabCache.get(id);
+  if (!pane) {
+    // 缓存未命中，清空 main 并创建新 DOM
+    clear(main);
+    pane = el('div', { cls: 'pane pane-enter' });
+    main.appendChild(pane);
+    
+    switch (id) {
+      case 'mainpage':
+        await renderMainPage(pane);
+        break;
+      case 'home':
+        renderHome(pane);
+        break;
+      case 'dashboard':
+        await renderDashboard(pane);
+        break;
+      case 'gantt':
+        renderGantt(pane);
+        break;
+      case 'plan':
+        renderPlan(pane);
+        break;
+      case 'requirement':
+        renderRequirement(pane);
+        break;
+      case 'bug':
+        renderBug(pane);
+        break;
+      case 'template':
+        renderTemplates(pane);
+        break;
+    }
+    
+    // 存入缓存
+    tabCache.set(id, pane);
+  } else {
+    // 缓存命中，清空 main 并显示缓存的 DOM
+    clear(main);
+    main.appendChild(pane);
   }
 }
 
@@ -81,11 +97,32 @@ export async function switchTab(id: string): Promise<void> {
   if (switching || id === activeTab) return;
   switching = true;
   const main = document.getElementById('app-main')!;
-  const old = main.querySelector('.pane');
+  const old = main.querySelector('.pane') as HTMLElement | null;
+  
+  // 隐藏旧 Tab
   if (old) {
     old.classList.add('pane-leave');
-    await wait(190);
+    // 等待动画完成或超时
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const onEnd = () => {
+        if (!resolved) {
+          resolved = true;
+          old.removeEventListener('animationend', onEnd);
+          resolve();
+        }
+      };
+      old.addEventListener('animationend', onEnd);
+      // 降级方案：100ms 后强制继续
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      }, 100);
+    });
   }
+  
   activeTab = id;
   renderTabs();
   await renderTab(id);
@@ -98,6 +135,9 @@ export async function refreshAll(): Promise<void> {
   
   // 检查项目进度，自动更新项目状态
   await updateProjectStatus();
+  
+  // 清空 Tab 缓存，因为数据已更新
+  tabCache.clear();
   
   renderHeader();
   await renderTab(activeTab);
@@ -180,7 +220,7 @@ function renderHeader(): void {
     cls: 'btn',
     text: '⇪ 导入项目',
     attrs: { type: 'button' },
-    title: '从 .json 迁移快照导入项目（桌面版）'
+    title: '导入项目配置或数据（桌面版）'
   });
   importBtn.addEventListener('click', async () => {
     if (!isElectron) {
@@ -188,16 +228,7 @@ function renderHeader(): void {
       return;
     }
     if (!(await requireRepo())) return;
-    try {
-      const prj = await store.importProject();
-      if (!prj) return;
-      state.projectId = prj.id;
-      toast(`已导入项目「${prj.name}」（含全部任务/需求/缺陷，仓库已重建）`);
-      await refreshAll();
-    } catch (e) {
-      const msg = (e as Error).message;
-      if (msg !== '__CANCELED__') toast(`导入失败：${msg}`, 'err');
-    }
+    openImportProjectDialog();
   });
   const editBtn = el('button', {
     cls: 'btn',
@@ -904,6 +935,63 @@ export async function requireRepo(): Promise<boolean> {
   toast('请先创建或打开系统仓库', 'warn');
   await openWorkspaceWizard();
   return false;
+}
+
+/* ---- 导入项目对话框 ---- */
+function openImportProjectDialog(): void {
+  const m = openModal('导入项目');
+  
+  // 版块一：导入项目配置文件
+  const configSection = el('div', { cls: 'export-section' });
+  configSection.appendChild(el('div', { cls: 'export-section-title', text: '导入项目配置文件' }));
+  const configHint = el('div', { cls: 'f-hint', text: '选择 .json 配置文件导入项目（含阶段/任务/需求/缺陷）' });
+  configSection.appendChild(configHint);
+  
+  const configBtn = el('button', { cls: 'btn', text: '选择 JSON 配置文件', attrs: { type: 'button' } });
+  configBtn.addEventListener('click', async () => {
+    try {
+      const prj = await store.importFromJson();
+      if (!prj) return;
+      state.projectId = prj.id;
+      m.close();
+      toast(`已导入项目「${prj.name}」（含全部任务/需求/缺陷，仓库已重建）`);
+      await refreshAll();
+    } catch (e) {
+      const msg = (e as Error).message || String(e);
+      if (!msg.includes('__CANCELED__')) toast(`导入失败：${msg}`, 'err');
+    }
+  });
+  configSection.appendChild(configBtn);
+  
+  // 版块二：导入项目数据
+  const dataSection = el('div', { cls: 'export-section' });
+  dataSection.appendChild(el('div', { cls: 'export-section-title', text: '导入项目数据' }));
+  const dataHint = el('div', { cls: 'f-hint', text: '选择 .zip 压缩包导入项目数据（含仓库文件）' });
+  dataSection.appendChild(dataHint);
+  
+  const dataBtn = el('button', { cls: 'btn', text: '选择 ZIP 压缩包', attrs: { type: 'button' } });
+  dataBtn.addEventListener('click', async () => {
+    try {
+      const prj = await store.importFromZip();
+      if (!prj) return;
+      state.projectId = prj.id;
+      m.close();
+      toast(`已导入项目「${prj.name}」（含全部任务/需求/缺陷，仓库已重建）`);
+      await refreshAll();
+    } catch (e) {
+      const msg = (e as Error).message || String(e);
+      if (!msg.includes('__CANCELED__')) toast(`导入失败：${msg}`, 'err');
+    }
+  });
+  dataSection.appendChild(dataBtn);
+  
+  // 组装对话框
+  m.body.append(configSection, dataSection);
+  
+  // 关闭按钮
+  const cancel = el('button', { cls: 'btn ghost', text: '取消', attrs: { type: 'button' } });
+  cancel.addEventListener('click', () => m.close());
+  m.foot.append(cancel);
 }
 
 /* ---- 启动 ---- */

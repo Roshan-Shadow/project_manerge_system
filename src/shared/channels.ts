@@ -29,5 +29,7 @@ export const IPC = {
   REPO_DEFAULTS_SET: 'pms:repo-defaults-set',
   TEMPLATE_SAVE_FILE: 'pms:template-save-file',
   TEMPLATE_DELETE_FILE: 'pms:template-delete-file',
-  TEMPLATE_OPEN_FOLDER: 'pms:template-open-folder'
+  TEMPLATE_OPEN_FOLDER: 'pms:template-open-folder',
+  IMPORT_FROM_JSON: 'pms:import-from-json',
+  IMPORT_FROM_ZIP: 'pms:import-from-zip'
 } as const;

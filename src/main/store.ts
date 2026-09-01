@@ -18,7 +18,11 @@ import {
   phaseAbsDir,
   repoExport,
   repoImport,
+  repoImportFromJson,
+  repoImportFromZip,
   repoOpen,
+  renumberPhaseFolders,
+  renumberTaskFolders,
   scheduleRepoSync,
   submitTaskFiles,
   taskAbsDir,
@@ -65,7 +69,84 @@ export function registerIpcHandlers(winGetter: () => BrowserWindow | null): void
       }
       cleanupTrash(s.workDir, s.trashRetentionDays);
     }
-    removeRows(db, entity, ids);
+    // 阶段删除：先显式删除子任务（确保 renumberTaskFolders 处理剩余任务重编号），再重编号阶段文件夹，最后删阶段文件夹
+    if (entity === 'phase') {
+      const affectedProjectIds = new Set<string>();
+      for (const id of ids) {
+        const ph = db.phases.find((p) => p.id === id);
+        if (ph) affectedProjectIds.add(ph.projectId);
+      }
+      // 1. 显式删除子任务（确保 renumberTaskFolders 处理剩余任务重编号）
+      const childTaskIds = db.tasks
+        .filter((t) => ids.includes(t.phaseId))
+        .map((t) => t.id);
+      if (childTaskIds.length) {
+        for (const pid of affectedProjectIds) {
+          renumberTaskFolders(db, pid, childTaskIds);
+        }
+        for (const tid of childTaskIds) {
+          const dir = taskAbsDir(db, tid);
+          if (dir && fs.existsSync(dir)) {
+            fs.rmSync(dir, { recursive: true, force: true });
+          }
+        }
+        removeRows(db, 'task', childTaskIds);
+      }
+      // 2. 预计算被删阶段文件夹路径（此时 ensureRepo 不会产生副作用，旧文件夹都还在）
+      const phaseDirsToDelete: string[] = [];
+      for (const id of ids) {
+        const dir = phaseAbsDir(db, id);
+        if (dir) phaseDirsToDelete.push(dir);
+      }
+      // 3. 重编号剩余阶段文件夹
+      for (const pid of affectedProjectIds) {
+        renumberPhaseFolders(db, pid, ids);
+      }
+      // 4. 用预计算路径删除被删阶段文件夹（避免 phaseAbsDir 内部 ensureRepo 重建旧文件夹）
+      for (const dir of phaseDirsToDelete) {
+        if (fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      }
+      // 5. 从 DB 删除阶段，并重编号剩余阶段的 order（确保 ensureRepo 生成正确文件夹名）
+      removeRows(db, 'phase', ids);
+      for (const pid of affectedProjectIds) {
+        const remaining = db.phases
+          .filter((p) => p.projectId === pid)
+          .sort((a, b) => a.order - b.order);
+        remaining.forEach((p, i) => { p.order = i + 1; });
+      }
+    }
+    // 任务删除：先重编号剩余任务文件夹，再删被删任务文件夹
+    if (entity === 'task') {
+      const affectedPhaseIds = new Set<string>();
+      for (const id of ids) {
+        const t = db.tasks.find((x) => x.id === id);
+        if (t && t.phaseId) affectedPhaseIds.add(t.phaseId);
+      }
+      const affectedProjectIds = new Set<string>();
+      for (const id of ids) {
+        const t = db.tasks.find((x) => x.id === id);
+        if (t) affectedProjectIds.add(t.projectId);
+      }
+      // 预计算被删任务文件夹路径（此时 ensureRepo 不会产生副作用，旧文件夹都还在）
+      const taskDirsToDelete: string[] = [];
+      for (const id of ids) {
+        const dir = taskAbsDir(db, id);
+        if (dir) taskDirsToDelete.push(dir);
+      }
+      // 在 removeRows 之前重编号（DB 仍含被删任务，可计算旧序号）
+      for (const pid of affectedProjectIds) {
+        renumberTaskFolders(db, pid, ids);
+      }
+      // 用预计算路径删除被删任务文件夹（避免 taskAbsDir 内部 ensureRepo 重建旧文件夹）
+      for (const dir of taskDirsToDelete) {
+        if (fs.existsSync(dir)) {
+          fs.rmSync(dir, { recursive: true, force: true });
+        }
+      }
+    }
+    if (entity !== 'phase') removeRows(db, entity, ids);
     scheduleRepoSync(db);
     return true;
   });
@@ -79,8 +160,10 @@ export function registerIpcHandlers(winGetter: () => BrowserWindow | null): void
     snapshotProjectAsTemplate(db, input.projectId, input.name, input.category)
   );
   ipcMain.handle(IPC.REPO_OPEN, (_e, projectId: string) => repoOpen(db, projectId));
-  ipcMain.handle(IPC.EXPORT_PROJECT, (_e, projectId: string) => repoExport(getWin(), db, projectId));
+  ipcMain.handle(IPC.EXPORT_PROJECT, (_e, projectId: string, exportWithZip: boolean) => repoExport(getWin(), db, projectId, exportWithZip));
   ipcMain.handle(IPC.IMPORT_PROJECT, () => repoImport(getWin(), db));
+  ipcMain.handle(IPC.IMPORT_FROM_JSON, () => repoImportFromJson(getWin(), db));
+  ipcMain.handle(IPC.IMPORT_FROM_ZIP, () => repoImportFromZip(getWin(), db));
   // SET-01~03 设置：读取 / 保存（建工作目录 + 同步仓库命名）/ 选择目录
   ipcMain.handle(IPC.SETTINGS_GET, () => {
     const s = getSettings();

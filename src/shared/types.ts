@@ -94,8 +94,10 @@ export interface TplPhase {
   name: string;
   tasks: string[];
   taskDeliverables?: Record<number, TplDeliverable[]>;
-  /** 阶段提示：说明该阶段要执行什么任务、怎么系统性有机地完成各项任务 */
-  tip?: string;
+  /** 阶段提示：针对该阶段的AI辅助开发的提示词 */
+  phases_tip?: string;
+  /** 任务提示：针对该阶段每个任务的AI辅助开发的提示词 */
+  task_tip?: string[];
 }
 
 export interface PmsTemplate {
@@ -203,7 +205,7 @@ export interface PmsApi {
   /** REPO-06 在资源管理器中打开项目仓库 */
   openRepo(projectId: ID): Promise<boolean>;
   /** REPO-04 导出项目快照，返回文件路径；取消返回 null */
-  exportProject(projectId: ID): Promise<string | null>;
+  exportProject(projectId: ID, exportWithZip?: boolean): Promise<string | null>;
   /** REPO-05 从快照文件导入项目；取消返回 null */
   importProject(): Promise<Project | null>;
   /** SET-01 读取设置 */
@@ -250,6 +252,10 @@ export interface PmsApi {
   deleteTemplateFile(id: string, name?: string): Promise<boolean>;
   /** 打开 template/ 文件夹 */
   openTemplateFolder(): Promise<boolean>;
+  /** 导入项目配置文件（JSON） */
+  importFromJson(): Promise<Project>;
+  /** 导入项目数据（ZIP） */
+  importFromZip(): Promise<Project>;
 }
 
 export type RepoDefaults = Omit<AppSettings, 'workDir'>;

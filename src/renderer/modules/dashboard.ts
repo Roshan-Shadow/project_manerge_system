@@ -3,7 +3,7 @@ import { Phase, Project, Task } from '../../shared/types.js';
 import { registerCleanup, openCreateProjectModal, requireRepo } from '../core/app.js';
 import { prepCanvas, tween } from '../core/anim.js';
 import { getTheme, hexA } from '../core/theme.js';
-import { el, icon, openModal, toast } from '../core/dom.js';
+import { el, icon, openModal, toast, confirmDialog } from '../core/dom.js';
 import { store, isElectron } from '../core/store.js';
 import {
   completionPct,
@@ -98,9 +98,9 @@ function panelOverview(prj: Project, tasks: Task[], phases: Phase[]): HTMLElemen
   });
   const expBtn = el('button', {
     cls: 'btn sm ghost',
-    text: '⇩ 导出快照',
+    text: '⇩ 导出项目',
     attrs: { type: 'button' },
-    title: '导出为 .json 迁移文件，可在其他机器通过【导入项目】恢复'
+    title: '导出项目配置文件，可选择是否包含项目数据'
   });
   expBtn.addEventListener('click', async () => {
     if (!isElectron) {
@@ -108,12 +108,7 @@ function panelOverview(prj: Project, tasks: Task[], phases: Phase[]): HTMLElemen
       return;
     }
     if (!(await requireRepo())) return;
-    try {
-      const file = await store.exportProject(prj.id);
-      if (file) toast(`已导出迁移文件：${file}`);
-    } catch (e) {
-      toast(`导出失败：${(e as Error).message}`, 'err');
-    }
+    openExportMenu(prj, expBtn);
   });
   extra.append(repoBtn, wsBtn, expBtn);
   title.appendChild(extra);
@@ -543,6 +538,49 @@ function heatCell(m: string, phase: string, n: number): HTMLElement {
     td.style.setProperty('--heat', String(Math.min(n, 6)));
   }
   return td;
+}
+
+/* ---- 导出项目下拉菜单 ---- */
+function openExportMenu(prj: Project, anchor: HTMLElement): void {
+  const oldMenu = document.querySelector('.export-menu');
+  if (oldMenu) oldMenu.remove();
+  
+  const menu = el('div', { cls: 'export-menu glass' });
+  
+  const optJson = el('div', { cls: 'export-menu-item', text: '导出配置文件 (.json)' });
+  optJson.addEventListener('click', async () => {
+    menu.remove();
+    try {
+      const file = await store.exportProject(prj.id, false);
+      if (file) toast(`已导出项目：${file}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (!msg.includes('__CANCELED__')) toast(`导出失败：${msg}`, 'err');
+    }
+  });
+  
+  const optZip = el('div', { cls: 'export-menu-item', text: '导出项目数据 (.zip)' });
+  optZip.addEventListener('click', async () => {
+    menu.remove();
+    try {
+      const file = await store.exportProject(prj.id, true);
+      if (file) toast(`已导出项目：${file}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (!msg.includes('__CANCELED__')) toast(`导出失败：${msg}`, 'err');
+    }
+  });
+  
+  menu.append(optJson, optZip);
+  anchor.parentElement!.appendChild(menu);
+  
+  const close = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      menu.remove();
+      document.removeEventListener('pointerdown', close);
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', close), 0);
 }
 
 /* ---- 风险告警日历：延期红 / 临期金，告警动效仅异常日期启用 ---- */

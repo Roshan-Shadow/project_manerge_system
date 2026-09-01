@@ -158,6 +158,12 @@ export function applyFreshSettings(db: DbShape, dir: string): void {
   ensureWorkspace(s);
   fs.writeFileSync(settingFile(dir), JSON.stringify(s, null, 2), 'utf-8');
   writePointer(dir);
+  // 清空内存数据库，防止切换仓库时其他仓库的数据残留
+  db.projects = [];
+  db.phases = [];
+  db.tasks = [];
+  db.requirements = [];
+  db.bugs = [];
   // 重置模板为系统内置，再加载当前仓库的自定义模板
   db.templates = clone(BUILTIN_TEMPLATES);
   loadCustomTemplates(db, dir);

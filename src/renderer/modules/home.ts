@@ -2,7 +2,7 @@ import { fmtDate, parseDate, todayMs } from '../../shared/date.js';
 import { Project, Task } from '../../shared/types.js';
 import { store, isElectron } from '../core/store.js';
 import { openCreateProjectModal, refreshAll, switchTab, requireRepo } from '../core/app.js';
-import { el, toast } from '../core/dom.js';
+import { el, toast, openModal } from '../core/dom.js';
 import { state, completionPct, isTaskOpen } from '../core/state.js';
 
 /* ============ 主页（HOME-01~03）：全部项目概况卡片墙 + 三种排序 ============ */
@@ -157,7 +157,7 @@ function homeCard(p: Project, tasks: Task[], idx: number): HTMLElement {
     if (!(await requireRepo())) return;
     if (!(await store.openRepo(p.id))) toast('仓库打开失败', 'err');
   });
-  const exp = el('button', { cls: 'btn sm ghost', text: '⇩ 快照', attrs: { type: 'button' }, title: '导出迁移快照（桌面版）' });
+  const exp = el('button', { cls: 'btn sm ghost', text: '⇩ 导出', attrs: { type: 'button' }, title: '导出项目（桌面版）' });
   exp.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (!isElectron) {
@@ -165,12 +165,7 @@ function homeCard(p: Project, tasks: Task[], idx: number): HTMLElement {
       return;
     }
     if (!(await requireRepo())) return;
-    try {
-      const file = await store.exportProject(p.id);
-      if (file) toast(`已导出迁移文件：${file}`);
-    } catch (err) {
-      toast(`导出失败：${(err as Error).message}`, 'err');
-    }
+    openExportMenu(p, exp);
   });
   actions.append(enter, repo, exp);
   card.appendChild(actions);
@@ -188,4 +183,47 @@ async function enterProject(projectId: string): Promise<void> {
   state.projectId = projectId;
   await refreshAll(); // 更新头部项目选择 + 各视图
   await switchTab('dashboard');
+}
+
+/* ---- 导出项目下拉菜单 ---- */
+function openExportMenu(prj: Project, anchor: HTMLElement): void {
+  const oldMenu = document.querySelector('.export-menu');
+  if (oldMenu) oldMenu.remove();
+  
+  const menu = el('div', { cls: 'export-menu glass' });
+  
+  const optJson = el('div', { cls: 'export-menu-item', text: '导出配置文件 (.json)' });
+  optJson.addEventListener('click', async () => {
+    menu.remove();
+    try {
+      const file = await store.exportProject(prj.id, false);
+      if (file) toast(`已导出项目：${file}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (!msg.includes('__CANCELED__')) toast(`导出失败：${msg}`, 'err');
+    }
+  });
+  
+  const optZip = el('div', { cls: 'export-menu-item', text: '导出项目数据 (.zip)' });
+  optZip.addEventListener('click', async () => {
+    menu.remove();
+    try {
+      const file = await store.exportProject(prj.id, true);
+      if (file) toast(`已导出项目：${file}`);
+    } catch (e) {
+      const msg = (e as Error).message;
+      if (!msg.includes('__CANCELED__')) toast(`导出失败：${msg}`, 'err');
+    }
+  });
+  
+  menu.append(optJson, optZip);
+  anchor.parentElement!.appendChild(menu);
+  
+  const close = (e: MouseEvent) => {
+    if (!menu.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+      menu.remove();
+      document.removeEventListener('pointerdown', close);
+    }
+  };
+  setTimeout(() => document.addEventListener('pointerdown', close), 0);
 }

@@ -14,6 +14,7 @@ const PRIORITIES: Priority[] = ['P0', 'P1', 'P2'];
 let searchQ = '';
 let statusFilter = '全部';
 const sel = new Set<string>();
+const phaseSel = new Set<string>();
 
 export function renderPlan(root: HTMLElement): void {
   const prj = curProject();
@@ -85,23 +86,44 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
     return true;
   });
 
-  if (sel.size) {
+  if (sel.size || phaseSel.size) {
     const bar = el('div', { cls: 'batch-bar' });
-    const del = el('button', { cls: 'btn sm danger', text: `批量删除（${sel.size}）`, attrs: { type: 'button' } });
+    const totalSelected = sel.size + phaseSel.size;
+    const del = el('button', { cls: 'btn sm danger', text: `批量删除（${totalSelected}）`, attrs: { type: 'button' } });
     del.addEventListener('click', async () => {
-      const ok = await confirmDialog('批量删除任务', `确认删除已选中的 ${sel.size} 个任务？删除后不可恢复。`);
+      const taskCount = sel.size;
+      const phaseCount = phaseSel.size;
+      let msg = '';
+      if (phaseCount > 0) {
+        const phaseTasksCount = filtered.filter(t => phaseSel.has(t.phaseId)).length;
+        msg = `确认删除 ${phaseCount} 个阶段和 ${phaseTasksCount} 个任务？删除后不可恢复。`;
+      } else {
+        msg = `确认删除已选中的 ${taskCount} 个任务？删除后不可恢复。`;
+      }
+      const ok = await confirmDialog('批量删除', msg);
       if (!ok) return;
-      await store.remove('task', Array.from(sel));
+      // 删除阶段下的任务
+      if (phaseCount > 0) {
+        const tasksToDelete = filtered.filter(t => phaseSel.has(t.phaseId)).map(t => t.id);
+        if (tasksToDelete.length) await store.remove('task', tasksToDelete);
+        await store.remove('phase', Array.from(phaseSel));
+        phaseSel.clear();
+      }
+      // 删除选中的任务
+      if (taskCount > 0) {
+        await store.remove('task', Array.from(sel));
+      }
       sel.clear();
-      toast(`已删除任务`, 'ok');
+      toast('已删除选中项', 'ok');
       await refreshAll();
     });
     const cancel = el('button', { cls: 'btn sm ghost', text: '取消选择', attrs: { type: 'button' } });
     cancel.addEventListener('click', () => {
       sel.clear();
+      phaseSel.clear();
       rerenderPlan();
     });
-    bar.append(el('span', { text: `已选择 ${sel.size} 项` }), del, cancel);
+    bar.append(el('span', { text: `已选择 ${totalSelected} 项` }), del, cancel);
     batchSlot.appendChild(bar);
   }
 
@@ -111,9 +133,14 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
   const allCb = el('input', { attrs: { type: 'checkbox', title: '全选 / 取消全选' } }) as HTMLInputElement;
   allCb.checked = filtered.length > 0 && filtered.every((t) => sel.has(t.id));
   allCb.addEventListener('change', () => {
-    for (const t of filtered) {
-      if (allCb.checked) sel.add(t.id);
-      else sel.delete(t.id);
+    if (allCb.checked) {
+      // 全选：选中所有阶段和任务
+      for (const t of filtered) sel.add(t.id);
+      for (const p of phases) phaseSel.add(p.id);
+    } else {
+      // 取消全选：清除所有选择
+      sel.clear();
+      phaseSel.clear();
     }
     rerenderPlan();
   });
@@ -151,6 +178,27 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
   const gc = el('td');
   gc.colSpan = 12;
     const inner = el('div', { attrs: { style: 'display:flex;align-items:center;gap:8px' } });
+    
+    // 阶段选择框
+    if (g.phase) {
+      const phaseCb = el('input', { attrs: { type: 'checkbox', title: '选中以批量删除阶段及其下所有任务' } }) as HTMLInputElement;
+      phaseCb.checked = phaseSel.has(g.phase.id);
+      phaseCb.addEventListener('change', () => {
+        if (phaseCb.checked) {
+          phaseSel.add(g.phase!.id);
+          // 自动勾选该阶段下所有任务
+          for (const t of g.tasks) sel.add(t.id);
+        } else {
+          phaseSel.delete(g.phase!.id);
+          // 取消勾选该阶段下所有任务
+          for (const t of g.tasks) sel.delete(t.id);
+        }
+        rerenderPlan();
+      });
+      phaseCb.classList.add('phase-cb');
+      inner.appendChild(phaseCb);
+    }
+    
     inner.appendChild(el('span', { text: `◆ ${g.phase ? g.phase.name : '未分组'}` }));
     inner.appendChild(el('span', { cls: 'cell-dim', text: `（${g.tasks.length}）` }));
     if (g.phase) {
@@ -175,9 +223,14 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
         const cnt = projectTasks().filter((t) => t.phaseId === g.phase!.id).length;
         const ok = await confirmDialog(
           '删除阶段',
-          cnt ? `阶段「${g.phase!.name}」下有 ${cnt} 个任务，删除后任务将变为未分组。确认删除？` : `确认删除阶段「${g.phase!.name}」？`
+          cnt ? `阶段「${g.phase!.name}」下有 ${cnt} 个任务，删除后任务将一并删除。确认删除？` : `确认删除阶段「${g.phase!.name}」？`
         );
         if (!ok) return;
+        // 删除阶段下的任务
+        if (cnt) {
+          const tasksToDelete = projectTasks().filter(t => t.phaseId === g.phase!.id).map(t => t.id);
+          await store.remove('task', tasksToDelete);
+        }
         await store.remove('phase', [g.phase!.id]);
         toast('阶段已删除');
         await refreshAll();
@@ -189,7 +242,7 @@ function renderTable(scroll: HTMLElement, batchSlot: HTMLElement, hasProject: bo
     tbody.appendChild(grow);
     for (const t of g.tasks) {
       shown++;
-      tbody.appendChild(taskRow(t, t0));
+      tbody.appendChild(taskRow(t, t0, g.phase?.id || null, phaseSel, rerenderPlan));
     }
   }
   if (!shown) {
@@ -244,8 +297,9 @@ const PLAN_SCHEMA_HELP = `计划范式结构说明：
 字段说明：
 - phases: 阶段数组（必填）
   - name: 阶段名称（必填）
-  - tip: 阶段提示（可选）
+  - phases_tip: 阶段提示（可选）
   - tasks: 任务名称数组（必填）
+  - task_tip: 任务提示数组（可选，与tasks一一对应）
   - taskDeliverables: 交付物配置（可选）
     - key为任务索引（从0开始）
     - value为该任务的交付物数组
@@ -255,8 +309,9 @@ const PLAN_SCHEMA_HELP = `计划范式结构说明：
   "phases": [
     {
       "name": "需求分析",
-      "tip": "本阶段完成需求调研和分析",
+      "phases_tip": "本阶段完成需求调研和分析",
       "tasks": ["用户调研", "需求文档"],
+      "task_tip": ["进行用户访谈和调研，输出调研报告", "根据调研结果编写需求文档"],
       "taskDeliverables": {
         "0": [{ "name": "调研报告" }],
         "1": [{ "name": "需求规格书" }]
@@ -273,6 +328,47 @@ const PLAN_SCHEMA_HELP = `计划范式结构说明：
 function openImportModal(): void {
   const m = openModal('整体导入');
   m.el.classList.add('import-modal');
+  
+  // 版块0：使用模板
+  const templateSection = el('div', { cls: 'import-section' });
+  const templateHeader = el('div', { cls: 'import-section-header' });
+  templateHeader.appendChild(el('h4', { text: '使用模板' }));
+  templateSection.appendChild(templateHeader);
+  
+  const templateHint = el('div', { cls: 'import-hint', text: '选择模板中心的模板快速创建计划结构' });
+  templateSection.appendChild(templateHint);
+  
+  const templateList = el('div', { cls: 'template-list' });
+  const templates = state.data?.templates || [];
+  
+  if (templates.length === 0) {
+    templateList.appendChild(el('div', { cls: 'empty-tip', text: '暂无可用模板，请先在模板中心创建或导入模板' }));
+  } else {
+    for (const tpl of templates) {
+      const tplItem = el('div', { cls: 'template-item' });
+      const tplName = el('div', { cls: 'template-name', text: tpl.name });
+      const tplInfo = el('div', { cls: 'template-info', text: `${tpl.phases.length} 个阶段 · ${tpl.category}` });
+      tplItem.append(tplName, tplInfo);
+      tplItem.addEventListener('click', () => {
+        // 将模板转换为 JSON 格式并填充到编辑器
+        const planData = {
+          name: tpl.name,
+          phases: tpl.phases.map(p => ({
+            name: p.name,
+            tasks: p.tasks,
+            phases_tip: p.phases_tip || '',
+            ...(p.task_tip?.length ? { task_tip: p.task_tip } : {})
+          }))
+        };
+        jsonEditor.value = JSON.stringify(planData, null, 2);
+        updateLineNumbers();
+        validateJson(jsonEditor.value);
+        toast(`已加载模板「${tpl.name}」`, 'ok');
+      });
+      templateList.appendChild(tplItem);
+    }
+  }
+  templateSection.appendChild(templateList);
   
   // 版块1：选择JSON文件
   const fileSection = el('div', { cls: 'import-section' });
@@ -333,10 +429,15 @@ function openImportModal(): void {
   editorWrap.append(lineNumbers, jsonEditor);
   planSection.appendChild(editorWrap);
   
-  // 操作按钮
-  const actionRow = el('div', { cls: 'import-actions' });
-  const formatBtn = el('button', { cls: 'btn sm ghost', text: '格式化', attrs: { type: 'button' } });
-  formatBtn.addEventListener('click', () => {
+  m.body.append(templateSection, fileSection, planSection);
+  
+  // 按钮顺序：格式化、导入、取消
+  const closeBtn = el('button', { cls: 'btn ghost', text: '取消', attrs: { type: 'button' } });
+  closeBtn.addEventListener('click', () => m.close());
+  
+  // 底部格式化按钮
+  const footFormatBtn = el('button', { cls: 'btn sm ghost', text: '格式化', attrs: { type: 'button' } });
+  footFormatBtn.addEventListener('click', () => {
     try {
       const parsed = JSON.parse(jsonEditor.value);
       jsonEditor.value = JSON.stringify(parsed, null, 2);
@@ -348,8 +449,9 @@ function openImportModal(): void {
     }
   });
   
-  const importConfirmBtn = el('button', { cls: 'btn primary', text: '导入', attrs: { type: 'button' } });
-  importConfirmBtn.addEventListener('click', async () => {
+  // 底部导入按钮
+  const footImportBtn = el('button', { cls: 'btn primary', text: '导入', attrs: { type: 'button' } });
+  footImportBtn.addEventListener('click', async () => {
     const result = validateJson(jsonEditor.value);
     if (!result.valid) {
       toast(result.error || 'JSON格式不正确', 'err');
@@ -367,14 +469,7 @@ function openImportModal(): void {
     }
   });
   
-  actionRow.append(formatBtn, importConfirmBtn);
-  planSection.appendChild(actionRow);
-  
-  m.body.append(fileSection, planSection);
-  
-  const closeBtn = el('button', { cls: 'btn ghost', text: '取消', attrs: { type: 'button' } });
-  closeBtn.addEventListener('click', () => m.close());
-  m.foot.appendChild(closeBtn);
+  m.foot.append(footFormatBtn, footImportBtn, closeBtn);
   
   // 初始化行号
   updateLineNumbers();
@@ -430,7 +525,7 @@ function showPlanSchemaHelp(): void {
 }
 
 /** 导入计划数据 */
-async function importPlan(data: { phases: Array<{ name: string; tip?: string; tasks: string[]; taskDeliverables?: Record<number, Array<{ name: string; note?: string }>> }> }): Promise<void> {
+async function importPlan(data: { phases: Array<{ name: string; phases_tip?: string; tasks: string[]; task_tip?: string[]; taskDeliverables?: Record<number, Array<{ name: string; note?: string }>> }> }): Promise<void> {
   const prj = curProject();
   if (!prj) return;
   
@@ -445,7 +540,7 @@ async function importPlan(data: { phases: Array<{ name: string; tip?: string; ta
       projectId: state.projectId,
       name: phaseData.name,
       order: maxOrder,
-      tip: phaseData.tip || ''
+      tip: phaseData.phases_tip || ''
     };
     const phase = await store.create('phase', phasePayload) as Phase;
     
@@ -480,7 +575,7 @@ async function importPlan(data: { phases: Array<{ name: string; tip?: string; ta
           status: '待开始',
           priority: 'P1',
           desc: '',
-          tip: '',
+          tip: phaseData.task_tip?.[i] || '',
           deliverables,
           completedAt: ''
         });
@@ -549,14 +644,27 @@ function showTaskTipModal(task: Task): void {
   m.foot.appendChild(closeBtn);
 }
 
-function taskRow(t: Task, t0: number): HTMLTableRowElement {
+function taskRow(t: Task, t0: number, phaseId: string | null, phaseSel: Set<string>, rerenderFn: () => void): HTMLTableRowElement {
   const tr = el('tr') as HTMLTableRowElement;
   const cb = el('input', { attrs: { type: 'checkbox', title: '选中以批量删除' } }) as HTMLInputElement;
   cb.checked = sel.has(t.id);
+  cb.classList.add('task-cb');
   cb.addEventListener('change', () => {
-    if (cb.checked) sel.add(t.id);
-    else sel.delete(t.id);
-    rerenderPlan();
+    if (cb.checked) {
+      sel.add(t.id);
+      // 如果该阶段下所有任务都被选中，则自动选中阶段
+      if (phaseId) {
+        const phaseTasks = projectTasks().filter(t => t.phaseId === phaseId);
+        if (phaseTasks.every(t => sel.has(t.id))) {
+          phaseSel.add(phaseId);
+        }
+      }
+    } else {
+      sel.delete(t.id);
+      // 取消选中时，同时取消阶段选择
+      if (phaseId) phaseSel.delete(phaseId);
+    }
+    rerenderFn();
   });
   tr.appendChild(wrap(cb));
   const titleCell = el('td');
@@ -969,9 +1077,13 @@ export function openTaskEditModal(): void {
         const cnt = projectTasks().filter((t) => t.phaseId === phase.id).length;
         const ok = await confirmDialog(
           '删除阶段',
-          cnt ? `阶段「${phase.name}」下有 ${cnt} 个任务，删除后任务将变为未分组。确认删除？` : `确认删除阶段「${phase.name}」？`
+          cnt ? `阶段「${phase.name}」下有 ${cnt} 个任务，删除后任务将一并删除。确认删除？` : `确认删除阶段「${phase.name}」？`
         );
         if (!ok) return;
+        if (cnt) {
+          const tasksToDelete = projectTasks().filter(t => t.phaseId === phase.id).map(t => t.id);
+          await store.remove('task', tasksToDelete);
+        }
         await store.remove('phase', [phase.id]);
         toast('阶段已删除');
         await refreshAll();

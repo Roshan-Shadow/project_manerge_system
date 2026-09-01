@@ -515,3 +515,25 @@ body[data-theme='skyline'] .tpl-badge { color: #2b6cb8; }
 .import-json-editor:focus { outline: none; }
 .import-json-editor::placeholder { color: var(--dim); }
 .import-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 12px; }
+.import-hint { font-size: 12px; color: var(--dim); margin-bottom: 10px; }
+.template-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; max-height: 200px; overflow-y: auto; padding: 4px; }
+.template-item { padding: 12px; border: 1px solid var(--weak-line); border-radius: 8px; cursor: pointer; transition: all 0.2s var(--ease); background: var(--card); }
+.template-item:hover { border-color: var(--neon-soft); background: rgba(var(--neon-rgb), 0.08); transform: translateY(-2px); }
+.template-name { font-size: 14px; font-weight: 500; color: var(--txt); margin-bottom: 4px; }
+.template-info { font-size: 12px; color: var(--dim); }
+
+/* ============ 计划页面选择框样式 ============ */
+/* 阶段选择框：使用金色强调色 */
+.phase-cb {
+  width: 18px !important;
+  height: 18px !important;
+  accent-color: var(--gold) !important;
+  cursor: pointer;
+}
+/* 任务选择框：使用霓虹色强调色 */
+.task-cb {
+  width: 16px !important;
+  height: 16px !important;
+  accent-color: var(--neon) !important;
+  cursor: pointer;
+}
